@@ -1,0 +1,19 @@
+rules_version = '2';
+service firebase.storage {
+ match /b/{bucket}/o {
+  function member(c){return request.auth != null && firestore.exists(/databases/(default)/documents/companies/$(c)) && firestore.get(/databases/(default)/documents/companies/$(c)).data.active == true && firestore.exists(/databases/(default)/documents/companies/$(c)/members/$(request.auth.uid)) && firestore.get(/databases/(default)/documents/companies/$(c)/members/$(request.auth.uid)).data.active == true;}
+  function inspector(c){return member(c) && firestore.get(/databases/(default)/documents/companies/$(c)/members/$(request.auth.uid)).data.role == 'inspector';}
+  function validFile(){return request.resource.size > 0 && request.resource.size <= 10 * 1024 * 1024 && request.resource.contentType in ['image/jpeg','image/png','application/pdf'] && request.resource.metadata.keys().size() == 0;}
+  match /companies/{companyId}/projects/{projectId}/{fileId} {
+   allow create: if inspector(companyId) && firestore.exists(/databases/(default)/documents/companies/$(companyId)/projects/$(projectId)) && validFile();
+   allow read: if member(companyId) && firestore.exists(/databases/(default)/documents/companies/$(companyId)/projects/$(projectId)) && (inspector(companyId) || (firestore.exists(/databases/(default)/documents/companies/$(companyId)/projects/$(projectId)/attachments/$(fileId)) && firestore.get(/databases/(default)/documents/companies/$(companyId)/projects/$(projectId)/attachments/$(fileId)).data.ownerVisible == true));
+   allow update,delete: if false;
+  }
+  match /companies/{companyId}/assets/{assetId} {
+   allow create: if inspector(companyId) && validFile() && request.resource.contentType in ['image/jpeg','image/png'];
+   allow read: if member(companyId) && firestore.exists(/databases/(default)/documents/companies/$(companyId)/assets/$(assetId));
+   allow update,delete: if false;
+  }
+  match /{allPaths=**} {allow read,write: if false;}
+ }
+}

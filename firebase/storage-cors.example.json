@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://SUBSTITUIR-PELO-DOMINIO-PUBLICADO"],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Disposition"],
+    "maxAgeSeconds": 3600
+  }
+]

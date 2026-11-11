@@ -1,0 +1,7 @@
+node_modules
+.next
+functions/lib
+playwright-report
+test-results
+package-lock.json
+firebase-debug.log

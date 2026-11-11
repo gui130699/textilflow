@@ -1,0 +1,20 @@
+runConfig:
+  cpu: 1
+  memoryMiB: 512
+  minInstances: 0
+  maxInstances: 2
+  concurrency: 80
+# Public web SDK configuration; these values are not administrator credentials.
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyDhDBYvMmZ5vaKhon6r6v1HL7IGvB7o8Ao
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: textilflow-gui130699.firebaseapp.com
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: textilflow-gui130699
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: textilflow-gui130699.firebasestorage.app
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: 1:180669335706:web:47ce6ba5adc9bac7987723
+  - variable: NEXT_PUBLIC_USE_EMULATORS
+    value: "false"
