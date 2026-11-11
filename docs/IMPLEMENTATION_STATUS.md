@@ -13,7 +13,7 @@ Registro inicial: 10/11/2026. Este documento distingue código executável, vali
 | Relatórios    | Projetos, atrasos, cortes líquidos diários, saldos por terceiro/lote, histórico e inspeções, filtros, CSV e impressão                                                                                                          |
 | Alertas       | Atrasos, inspeção e modelagem pendentes, produção parada, terceiros vencidos, divergências e conclusão                                                                                                                         |
 | Firebase real | Projeto `textilflow-gui130699`, web app, Authentication e Firestore Standard em São Paulo criados. Regras e Authentication publicados e 174 índices conferidos. Sem dados fictícios em produção                                |
-| GitHub        | Repositório privado `gui130699/textilflow`, branch principal `main`; envio do código e execução remota de Quality em finalização                                                                                               |
+| GitHub        | Repositório privado `gui130699/textilflow`, branch principal `main`; código e workflow Quality publicados                                                                                                                      |
 | Produção      | Functions, Storage e App Hosting ainda não publicados. Faturamento não ativado; não há URL de aplicação online verificada                                                                                                      |
 
 ## Validação
@@ -22,7 +22,7 @@ Registro inicial: 10/11/2026. Este documento distingue código executável, vali
 - 22 testes unitários, 51 testes de integração no Firebase Emulator Suite e 18 testes de navegador passaram. Foram verificados o isolamento entre empresas, o acesso de leitura do proprietário, as transações concorrentes, os estornos, os relatórios e os anexos.
 - Auditorias npm de frontend e Functions sem vulnerabilidades reportadas.
 - Compilação das regras validada por dry-run. Firestore e Authentication publicados.
-- A execução remota pode ser acompanhada no workflow Quality do GitHub.
+- O [workflow Quality](https://github.com/gui130699/textilflow/actions/runs/43024479740) passou no commit `8c48691`.
 
 ## Pendências externas para publicação
 
