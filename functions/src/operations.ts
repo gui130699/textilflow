@@ -62,9 +62,31 @@ function operation(fn: (r: OperationRequest) => Promise<unknown>) {
   };
 }
 const context = z.object({ companyId: id, projectId: id });
+const registeredInspector = (r: OperationRequest, profile: boolean) =>
+  r.auth?.token.inspector === true ||
+  (r.auth?.token.email_verified === true && profile);
+
+export const registerInspector = operation(async (r) => {
+  const user = uid(r);
+  if (!r.auth?.token.email_verified)
+    throw new HttpsError(
+      "failed-precondition",
+      "Confirme seu e-mail antes de cadastrar o perfil.",
+    );
+  const { name } = z
+    .object({ name: z.string().trim().min(2).max(120) })
+    .parse(r.data);
+  await db
+    .doc(`users/${user}`)
+    .set({ name, inspectorRegistered: true }, { merge: true });
+  return { ok: true };
+});
 export const companiesForUser = operation(async (r) => {
   const user = uid(r);
-  const links = await db.collection(`users/${user}/companies`).get();
+  const [links, profile] = await Promise.all([
+    db.collection(`users/${user}/companies`).get(),
+    db.doc(`users/${user}`).get(),
+  ]);
   const values = await Promise.all(
     links.docs.map(async (l) => {
       const [c, m] = await Promise.all([
@@ -78,14 +100,17 @@ export const companiesForUser = operation(async (r) => {
   );
   return {
     companies: values.filter(Boolean),
-    canCreate: r.auth?.token.inspector === true,
+    canCreate: registeredInspector(
+      r,
+      profile.get("inspectorRegistered") === true,
+    ),
   };
 });
 export const saveCompany = operation(async (r) => {
   const user = uid(r),
     input = z.object({ id: id, data: catalogSchema }).parse(r.data);
   const ref = db.doc(`companies/${input.id}`);
-  await db.runTransaction(async (tx) => {
+  return db.runTransaction(async (tx) => {
     const existing = await tx.get(ref);
     if (input.data.image !== (existing.get("image") ?? ""))
       throw new HttpsError(
@@ -96,11 +121,83 @@ export const saveCompany = operation(async (r) => {
       const membership = await tx.get(ref.collection("members").doc(user));
       if (!membership.get("active") || membership.get("role") !== "inspector")
         throw new HttpsError("permission-denied", "Acesso não autorizado.");
-    } else if (r.auth?.token.inspector !== true)
+      if (existing.get("taxId") && existing.get("taxId") !== input.data.taxId)
+        throw new HttpsError(
+          "failed-precondition",
+          "O documento de uma empresa cadastrada não pode ser alterado.",
+        );
+    }
+    const profile = await tx.get(db.doc(`users/${user}`));
+    if (
+      !existing.exists &&
+      !registeredInspector(r, profile.get("inspectorRegistered") === true)
+    )
       throw new HttpsError(
         "permission-denied",
-        "Somente inspetores provisionados podem criar empresas.",
+        "Cadastre seu perfil de inspetor com e-mail verificado.",
       );
+    const taxId = input.data.taxId;
+    if (
+      !existing.exists &&
+      r.auth?.token.inspector !== true &&
+      taxId.length !== 14
+    )
+      throw new HttpsError(
+        "invalid-argument",
+        "Informe o CNPJ da empresa com 14 dígitos.",
+      );
+    if (taxId.length === 14) {
+      const registry = db.doc(`companyCnpjs/${taxId}`);
+      const [indexed, legacy] = await Promise.all([
+        tx.get(registry),
+        tx.get(db.collection("companies").where("taxId", "==", taxId).limit(2)),
+      ]);
+      if (legacy.size > 1)
+        throw new HttpsError(
+          "failed-precondition",
+          "O CNPJ possui cadastros duplicados antigos. Contate o administrador.",
+        );
+      const registeredId = indexed.get("companyId") || legacy.docs[0]?.id;
+      if (registeredId && registeredId !== input.id) {
+        if (existing.exists)
+          throw new HttpsError(
+            "already-exists",
+            "Este CNPJ já pertence a outra empresa.",
+          );
+        const company = db.doc(`companies/${registeredId}`);
+        const request = company.collection("inspectorRequests").doc(user);
+        const [target, membership, previous] = await Promise.all([
+          tx.get(company),
+          tx.get(company.collection("members").doc(user)),
+          tx.get(request),
+        ]);
+        if (membership.get("active") && membership.get("role") === "inspector")
+          return { status: "already-member" };
+        if (!target.get("active") || !target.get("createdBy"))
+          throw new HttpsError(
+            "failed-precondition",
+            "O responsável pelo cadastro desta empresa precisa regularizar o acesso.",
+          );
+        if (!r.auth?.token.email_verified)
+          throw new HttpsError(
+            "failed-precondition",
+            "Confirme seu e-mail para pedir acesso.",
+          );
+        if (!previous.exists || previous.get("status") !== "pending") {
+          tx.set(request, {
+            status: "pending",
+            email: r.auth.token.email ?? "",
+            name: profile.get("name") || r.auth.token.name || "Inspetor",
+            createdAt: FieldValue.serverTimestamp(),
+          });
+          audit(tx, company, user, "requestInspectorAccess", {
+            requesterId: user,
+          });
+        }
+        return { status: "pending" };
+      }
+      if (!indexed.exists) tx.create(registry, { companyId: input.id });
+    }
     tx.set(
       ref,
       {
@@ -118,6 +215,11 @@ export const saveCompany = operation(async (r) => {
     if (!existing.exists) {
       tx.create(ref.collection("members").doc(user), {
         role: "inspector",
+        name:
+          profile.get("name") ||
+          r.auth?.token.name ||
+          r.auth?.token.email ||
+          "Inspetor",
         active: true,
         createdAt: FieldValue.serverTimestamp(),
       });
@@ -126,8 +228,137 @@ export const saveCompany = operation(async (r) => {
       });
     }
     audit(tx, ref, user, "saveCompany", input.data);
+    return { id: input.id, status: "saved" };
   });
-  return { id: input.id };
+});
+export const decideInspectorRequest = operation(async (r) => {
+  const user = uid(r);
+  const { companyId, requesterId, approve } = z
+    .object({
+      companyId: id,
+      requesterId: id,
+      approve: z.boolean(),
+    })
+    .parse(r.data);
+  const company = db.doc(`companies/${companyId}`);
+  const request = company.collection("inspectorRequests").doc(requesterId);
+  await db.runTransaction(async (tx) => {
+    await authorize(tx, companyId, user);
+    const [target, pending] = await Promise.all([
+      tx.get(company),
+      tx.get(request),
+    ]);
+    if (target.get("createdBy") !== user)
+      throw new HttpsError(
+        "permission-denied",
+        "Somente o primeiro inspetor pode decidir este pedido.",
+      );
+    if (pending.get("status") !== "pending")
+      throw new HttpsError(
+        "failed-precondition",
+        "Este pedido já foi analisado.",
+      );
+    tx.update(request, {
+      status: approve ? "approved" : "rejected",
+      reviewedAt: FieldValue.serverTimestamp(),
+      reviewedBy: user,
+    });
+    if (approve) {
+      tx.set(
+        company.collection("members").doc(requesterId),
+        {
+          role: "inspector",
+          name: pending.get("name"),
+          active: true,
+          createdAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      tx.set(db.doc(`users/${requesterId}/companies/${companyId}`), {
+        companyId,
+      });
+    }
+    audit(tx, company, user, "decideInspectorRequest", {
+      requesterId,
+      approve,
+    });
+  });
+  return { ok: true };
+});
+export const listInspectorRequests = operation(async (r) => {
+  const user = uid(r);
+  const { companyId } = z.object({ companyId: id }).parse(r.data);
+  const company = db.doc(`companies/${companyId}`);
+  return db.runTransaction(async (tx) => {
+    await authorize(tx, companyId, user);
+    if ((await tx.get(company)).get("createdBy") !== user)
+      throw new HttpsError(
+        "permission-denied",
+        "Somente o primeiro inspetor pode consultar estes pedidos.",
+      );
+    const pending = await tx.get(
+      company
+        .collection("inspectorRequests")
+        .where("status", "==", "pending")
+        .limit(100),
+    );
+    return pending.docs.map((request) => ({
+      id: request.id,
+      name: request.get("name"),
+      email: request.get("email"),
+    }));
+  });
+});
+export const listLotInspectors = operation(async (r) => {
+  const user = uid(r);
+  const { companyId } = z.object({ companyId: id }).parse(r.data);
+  return db.runTransaction(async (tx) => {
+    await authorize(tx, companyId, user);
+    const members = await tx.get(
+      db
+        .collection(`companies/${companyId}/members`)
+        .where("role", "==", "inspector")
+        .where("active", "==", true),
+    );
+    return members.docs.map((member) => ({
+      id: member.id,
+      name: member.get("name") || member.id,
+    }));
+  });
+});
+export const assignLotInspector = operation(async (r) => {
+  const user = uid(r);
+  const { companyId, projectId, lotId, inspectorUid } = context
+    .extend({ lotId: id, inspectorUid: id })
+    .parse(r.data);
+  const company = db.doc(`companies/${companyId}`);
+  const project = company.collection("projects").doc(projectId);
+  const lot = project.collection("productionBalances").doc(lotId);
+  await db.runTransaction(async (tx) => {
+    await authorize(tx, companyId, user);
+    const [projectDoc, current, member] = await Promise.all([
+      tx.get(project),
+      tx.get(lot),
+      tx.get(company.collection("members").doc(inspectorUid)),
+    ]);
+    if (!projectDoc.exists || !current.exists)
+      throw new HttpsError("not-found", "Lote não encontrado.");
+    if (!member.get("active") || member.get("role") !== "inspector")
+      throw new HttpsError(
+        "failed-precondition",
+        "Selecione um inspetor ativo desta empresa.",
+      );
+    tx.update(lot, {
+      inspectorUid,
+      inspectorName: member.get("name") || inspectorUid,
+    });
+    audit(tx, project, user, "assignLotInspector", {
+      lotId,
+      previousInspectorUid: current.get("inspectorUid") ?? null,
+      inspectorUid,
+    });
+  });
+  return { ok: true };
 });
 export const saveCatalog = operation(async (r) => {
   const user = uid(r),
@@ -488,6 +719,16 @@ export const createInvite = operation(async (r) => {
     hash = createHash("sha256").update(token).digest("hex");
   await db.runTransaction(async (tx) => {
     await authorize(tx, input.companyId, user);
+    if (
+      input.role === "inspector" &&
+      (await tx.get(db.doc(`companies/${input.companyId}`))).get(
+        "createdBy",
+      ) !== user
+    )
+      throw new HttpsError(
+        "permission-denied",
+        "Somente o primeiro inspetor pode convidar outro inspetor.",
+      );
     tx.create(db.doc(`invites/${hash}`), {
       ...input,
       email: input.email.toLowerCase(),
@@ -530,9 +771,29 @@ export const acceptInvite = operation(async (r) => {
       );
     await authorize(tx, invite.get("companyId"), invite.get("createdBy"));
     const company = invite.get("companyId");
-    tx.set(db.doc(`companies/${company}/members/${user}`), {
+    if (
+      invite.get("role") === "inspector" &&
+      (await tx.get(db.doc(`companies/${company}`))).get("createdBy") !==
+        invite.get("createdBy")
+    )
+      throw new HttpsError(
+        "permission-denied",
+        "Convite sem autorização do primeiro inspetor.",
+      );
+    const memberRef = db.doc(`companies/${company}/members/${user}`);
+    const currentMember = await tx.get(memberRef);
+    if (
+      currentMember.get("role") === "inspector" &&
+      invite.get("role") !== "inspector"
+    )
+      throw new HttpsError(
+        "failed-precondition",
+        "Este usuário já é inspetor desta empresa.",
+      );
+    tx.set(memberRef, {
       active: true,
       role: invite.get("role"),
+      name: r.auth?.token.name || r.auth?.token.email || "Usuário",
       createdAt: FieldValue.serverTimestamp(),
     });
     tx.set(db.doc(`users/${user}/companies/${company}`), {
@@ -567,6 +828,16 @@ export const updateMember = operation(async (r) => {
     const member = await tx.get(ref);
     if (!member.exists)
       throw new HttpsError("not-found", "Vínculo não encontrado.");
+    if (
+      member.get("role") === "inspector" &&
+      (await tx.get(db.doc(`companies/${input.companyId}`))).get(
+        "createdBy",
+      ) !== user
+    )
+      throw new HttpsError(
+        "permission-denied",
+        "Somente o primeiro inspetor pode gerenciar outro inspetor.",
+      );
     tx.update(ref, {
       active: input.active,
       updatedAt: FieldValue.serverTimestamp(),

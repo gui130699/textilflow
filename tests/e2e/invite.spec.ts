@@ -7,6 +7,8 @@ test("Criar conta abre o cadastro por convite", async ({ page }) => {
     page.getByRole("heading", { name: "Criar conta" }),
   ).toBeVisible();
   await expect(page.getByLabel("Senha", { exact: true })).toHaveCount(0);
+  const inspector = page.getByRole("link", { name: "Cadastrar como inspetor" });
+  await expect(inspector).toHaveAttribute("href", "/cadastro-inspetor");
 
   const token = "a".repeat(64);
   const field = page.getByLabel("Link do convite");

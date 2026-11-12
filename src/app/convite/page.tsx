@@ -118,6 +118,9 @@ export default function Invite() {
             <Link className="text-link block" href="/login">
               Voltar ao login
             </Link>
+            <Link className="text-link block" href="/cadastro-inspetor">
+              Cadastrar como inspetor
+            </Link>
           </form>
         ) : session.user ? (
           <>

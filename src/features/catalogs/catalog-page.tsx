@@ -69,14 +69,25 @@ export function CatalogPage({ kind }: { kind: string }) {
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
+      if (kind === "companies")
+        allowed.taxId = String(values.taxId ?? "").replace(/[.\-/\s]/g, "");
       const data = catalogSchema.parse(allowed);
-      await call(kind === "companies" ? "saveCompany" : "saveCatalog", {
-        ...(kind !== "companies" ? { companyId: company!.id, kind } : {}),
-        id: editing!.id,
-        data,
-      });
+      const result = await call<{ status?: string }>(
+        kind === "companies" ? "saveCompany" : "saveCatalog",
+        {
+          ...(kind !== "companies" ? { companyId: company!.id, kind } : {}),
+          id: editing!.id,
+          data,
+        },
+      );
       setEditing(null);
-      setSuccess("Registro salvo com sucesso.");
+      setSuccess(
+        result.status === "pending"
+          ? "Pedido enviado. Aguarde a aprovação do primeiro inspetor da empresa."
+          : result.status === "already-member"
+            ? "Você já tem acesso a esta empresa."
+            : "Registro salvo com sucesso.",
+      );
       list.reload();
       if (kind === "companies") await session.refresh();
     } catch (e) {

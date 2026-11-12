@@ -3,6 +3,11 @@ export const runtime = "nodejs";
 const allowed = [
   "companiesForUser",
   "saveCompany",
+  "registerInspector",
+  "listInspectorRequests",
+  "decideInspectorRequest",
+  "listLotInspectors",
+  "assignLotInspector",
   "saveCatalog",
   "saveProject",
   "recordEvent",

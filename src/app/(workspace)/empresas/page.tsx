@@ -1,5 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Building2, ArrowUpRight, Plus, RefreshCw } from "lucide-react";
 import { useSession } from "@/hooks/use-session";
 import { Button } from "@/components/ui/button";
@@ -63,6 +64,9 @@ export default function Companies() {
           <p>
             Aceite o convite enviado pelo inspetor para acessar a sua empresa.
           </p>
+          <Button variant="outline" asChild>
+            <Link href="/cadastro-inspetor">Cadastrar perfil de inspetor</Link>
+          </Button>
         </div>
       )}
     </>

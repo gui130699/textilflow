@@ -53,6 +53,13 @@ export function ProjectDetail({
     [initial, setInitial] = useState<Record<string, unknown>>({});
   const path = company ? `companies/${company.id}/projects/${id}` : null;
   const writable = company?.role === "inspector";
+  const [lotEditor, setLotEditor] = useState<{
+    id: string;
+    inspectorUid: string;
+  } | null>(null);
+  const [inspectors, setInspectors] = useState<{ id: string; name: string }[]>(
+    [],
+  );
   useEffect(() => {
     if (!path) return;
     return onSnapshot(
@@ -86,6 +93,45 @@ export function ProjectDetail({
     sort,
     tab === "files" && !writable,
   );
+  async function editLot(lot: Row) {
+    setBusy(true);
+    setError("");
+    try {
+      const options = await call<typeof inspectors>("listLotInspectors", {
+        companyId: company!.id,
+      });
+      setInspectors(options);
+      setLotEditor({
+        id: lot.id,
+        inspectorUid: String(lot.inspectorUid ?? ""),
+      });
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function saveLot(event: React.FormEvent) {
+    event.preventDefault();
+    if (!lotEditor || !company) return;
+    setBusy(true);
+    setError("");
+    try {
+      await call("assignLotInspector", {
+        companyId: company.id,
+        projectId: id,
+        lotId: lotEditor.id,
+        inspectorUid: lotEditor.inspectorUid,
+      });
+      setLotEditor(null);
+      setSuccess("Inspetor responsável atualizado.");
+      list.reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
   const label = useLabels(company?.id, [
     ["clients", String(project?.clientId ?? "")],
     ["products", String(project?.productId ?? "")],
@@ -380,12 +426,63 @@ export function ProjectDetail({
             <div className="panel-heading">
               <h2>Lotes operacionais</h2>
             </div>
+            {lotEditor && writable && (
+              <form className="p-4" onSubmit={saveLot}>
+                <label htmlFor="lot-inspector">
+                  Inspetor responsável · {lotEditor.id}
+                </label>
+                <select
+                  id="lot-inspector"
+                  value={lotEditor.inspectorUid}
+                  required
+                  onChange={(e) =>
+                    setLotEditor({ ...lotEditor, inspectorUid: e.target.value })
+                  }
+                >
+                  <option value="">Selecione o inspetor</option>
+                  {inspectors.map((inspector) => (
+                    <option key={inspector.id} value={inspector.id}>
+                      {inspector.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="form-actions">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setLotEditor(null)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button disabled={busy}>Salvar responsável</Button>
+                </div>
+              </form>
+            )}
             <DataTable
               rows={records}
               columns={[
                 { accessorKey: "lotId", header: "Lote" },
                 { accessorKey: "colorId", header: "Cor" },
                 { accessorKey: "sizeId", header: "Tamanho" },
+                {
+                  accessorKey: "inspectorName",
+                  header: "Inspetor responsável",
+                  cell: (i) => (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{String(i.getValue() || "A definir")}</span>
+                      {writable && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => editLot(i.row.original)}
+                        >
+                          Alterar responsável
+                        </Button>
+                      )}
+                    </div>
+                  ),
+                },
                 {
                   id: "balances",
                   header: "Distribuição",

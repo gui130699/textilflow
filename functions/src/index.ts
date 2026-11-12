@@ -11,6 +11,11 @@ setGlobalOptions({
 
 export const companiesForUser = onCall(operations.companiesForUser);
 export const saveCompany = onCall(operations.saveCompany);
+export const registerInspector = onCall(operations.registerInspector);
+export const listInspectorRequests = onCall(operations.listInspectorRequests);
+export const decideInspectorRequest = onCall(operations.decideInspectorRequest);
+export const listLotInspectors = onCall(operations.listLotInspectors);
+export const assignLotInspector = onCall(operations.assignLotInspector);
 export const saveCatalog = onCall(operations.saveCatalog);
 export const saveProject = onCall(operations.saveProject);
 export const recordEvent = onCall(operations.recordEvent);

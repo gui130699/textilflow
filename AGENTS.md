@@ -13,11 +13,11 @@
 ## Mandatory invariants
 
 1. Every operational path is scoped to a company. Read the active membership inside every write transaction.
-2. Owner is read-only. Inspector claim permits creating companies; membership permits managing an existing company.
+2. Owners have read-only company access. A verified inspector profile can register a new company. The existing inspector claim remains valid for provisioned accounts. Duplicate CNPJ requests never grant membership until the company's first inspector approves them.
 3. Production uses integers, atomic balances and immutable ledger entries. Never update or delete ledger entries.
 4. Repeated operation IDs must match payload hashes. Reversals use unique compensating events.
 5. Sum of balances, including shipped and losses, must equal net cut. Never confuse cumulative totals and current stock.
-6. Lot color and size are immutable. No transfers across lots or variants.
+6. Lot color and size are immutable. No transfers across lots or variants. A new lot records the inspector who created it; any reassignment must target an active inspector of the same company and produce an audit entry.
 7. Material decimals use scaled integers with precision 0.001. Critical timestamps come from the server.
 8. Public signup never grants membership. Invitations require verified matching email, expiry and one-time consumption.
 9. Files remain private. Use authenticated Storage downloads, not persistent public download tokens.

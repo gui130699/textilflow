@@ -37,6 +37,9 @@ async function seed() {
     await auth.setCustomUserClaims(uid, { inspector });
     await db.doc(`companies/demo-company/members/${uid}`).set({
       role: inspector ? "inspector" : "owner",
+      name: inspector
+        ? "Inspetor de demonstração"
+        : "Proprietário de demonstração",
       active: true,
       createdAt: FieldValue.serverTimestamp(),
     });
@@ -179,6 +182,8 @@ async function seed() {
         projectId: "itaborai",
         lotId: "principal",
         colorId: "",
+        inspectorUid: "inspector-demo",
+        inspectorName: "Inspetor de demonstração",
         sizeId: "",
         projectName: "Itaboraí",
         nextDueOn: "2026-12-01",

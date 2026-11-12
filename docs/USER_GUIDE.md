@@ -1,5 +1,11 @@
 # Manual básico
 
+## Cadastro de inspetor
+
+Na tela de login, abra **Criar conta → Cadastrar como inspetor** e confirme seu e-mail. Em **Cadastrar empresa**, informe o CNPJ. Se ele já existir, o app cria um pedido de acesso e a empresa só aparece para você após a aprovação. O primeiro inspetor analisa os pedidos em **Usuários e permissões**. A aprovação é registrada no histórico da empresa.
+
+Cada lote operacional novo recebe como responsável o inspetor que registra o primeiro corte. Em **Projetos → Visão geral → Lotes operacionais**, um inspetor pode transferir a responsabilidade para outro inspetor ativo da mesma empresa. Lotes antigos sem responsável aparecem como **A definir** até que sejam atribuídos.
+
 ## Primeiro acesso
 
 O operador provisiona o primeiro inspetor usando `scripts/bootstrap-admin.ts`. Na tela de login, use **Esqueci minha senha** para definir a senha da conta. O script não imprime nem armazena senhas.

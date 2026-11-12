@@ -30,11 +30,11 @@ async function invoke<T = Record<string, unknown>>(
   if (body.error) throw Error(body.error.message);
   return body.result;
 }
-async function user(role: string) {
+async function user(role: string, emailVerified = true) {
   const uid = `${role}-${randomUUID()}`,
     email = `${uid}@test.local`,
     password = randomUUID() + randomUUID();
-  await getAuth().createUser({ uid, email, password, emailVerified: true });
+  await getAuth().createUser({ uid, email, password, emailVerified });
   if (role === "inspector")
     await getAuth().setCustomUserClaims(uid, { inspector: true });
   const response = await fetch(
@@ -142,6 +142,96 @@ beforeAll(async () => {
     });
 });
 describe("Cloud Functions e transações reais no emulador", () => {
+  it("exige e-mail confirmado para cadastrar inspetor", async () => {
+    const unverified = await user("unverified", false);
+    await expect(
+      invoke(
+        "registerInspector",
+        { name: "Inspetor pendente" },
+        unverified.token,
+      ),
+    ).rejects.toThrow(/confirme seu e-mail/i);
+  });
+  it("reserva CNPJ único e só libera acesso com decisão do primeiro inspetor", async () => {
+    const accounts = await Promise.all([user("signup"), user("signup")]);
+    const ids = accounts.map(() => randomUUID());
+    const taxId = "11222333000181";
+    await Promise.all(
+      accounts.map((account, i) =>
+        invoke("registerInspector", { name: "Inspetor " + i }, account.token),
+      ),
+    );
+    const saves = await Promise.all(
+      accounts.map((account, i) =>
+        invoke(
+          "saveCompany",
+          {
+            id: ids[i],
+            data: { name: "Empresa com CNPJ", taxId, active: true },
+          },
+          account.token,
+        ),
+      ),
+    );
+    expect(saves.map((result) => result.status).sort()).toEqual([
+      "pending",
+      "saved",
+    ]);
+    const first = saves.findIndex((result) => result.status === "saved");
+    const founder = accounts[first],
+      applicant = accounts[1 - first],
+      companyId = ids[first];
+    expect(
+      (await db.collection("companies").where("taxId", "==", taxId).get()).size,
+    ).toBe(1);
+    const decision = { companyId, requesterId: applicant.uid, approve: true };
+    const list = await invoke<{ id: string }[]>(
+      "listInspectorRequests",
+      { companyId },
+      founder.token,
+    );
+    expect(list.map((request) => request.id)).toEqual([applicant.uid]);
+    await expect(
+      invoke("decideInspectorRequest", decision, applicant.token),
+    ).rejects.toThrow();
+    const membership = db.doc(
+      `companies/${companyId}/members/${applicant.uid}`,
+    );
+    expect((await membership.get()).exists).toBe(false);
+    await invoke("decideInspectorRequest", decision, founder.token);
+    expect((await membership.get()).get("role")).toBe("inspector");
+    await expect(
+      invoke("decideInspectorRequest", decision, founder.token),
+    ).rejects.toThrow(/já foi analisado/i);
+  });
+  it("atribui lote ao inspetor que criou e valida troca de responsável", async () => {
+    const projectId = await project();
+    await release(projectId);
+    await move(projectId, "cut", 5);
+    const lot = db.doc(
+      `companies/${companyId}/projects/${projectId}/productionBalances/main`,
+    );
+    const company = await db.doc(`companies/${companyId}`).get();
+    expect((await lot.get()).get("inspectorUid")).toBe(
+      company.get("createdBy"),
+    );
+    const outsider = await user("signup");
+    const assign = {
+      companyId,
+      projectId,
+      lotId: "main",
+      inspectorUid: outsider.uid,
+    };
+    await expect(invoke("assignLotInspector", assign)).rejects.toThrow(
+      /inspetor ativo/i,
+    );
+    await db
+      .doc(`companies/${companyId}/members/${outsider.uid}`)
+      .set({ active: true, role: "inspector", name: "Novo responsável" });
+    await invoke("assignLotInspector", assign);
+    await move(projectId, "cut", 5);
+    expect((await lot.get()).get("inspectorName")).toBe("Novo responsável");
+  });
   it("cria empresa e seis cadastros com auditoria", async () => {
     expect(
       (await db.doc(`companies/${companyId}/models/model`).get()).get(

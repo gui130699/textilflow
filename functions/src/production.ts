@@ -62,7 +62,7 @@ export async function move(uid: string, input: unknown) {
   const ledger = project.collection("productionMovements").doc(m.operationId);
   const hash = createHash("sha256").update(JSON.stringify(m)).digest("hex");
   return db.runTransaction(async (tx) => {
-    await authorize(tx, m.companyId, uid);
+    const actor = await authorize(tx, m.companyId, uid);
     const [p, l, existing] = await Promise.all([
       tx.get(project),
       tx.get(lot),
@@ -228,6 +228,8 @@ export async function move(uid: string, input: unknown) {
       companyId: m.companyId,
       projectId: m.projectId,
       lotId: m.lotId,
+      inspectorUid: l.get("inspectorUid") || uid,
+      inspectorName: l.get("inspectorName") || actor.name || uid,
       colorId: m.colorId,
       sizeId: m.sizeId,
       balances,
