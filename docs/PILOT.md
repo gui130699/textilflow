@@ -5,7 +5,7 @@ O Render executa o Next.js e a API. O login e o Firestore continuam no projeto `
 ## Implantação
 
 1. Entre no Render e abra [Implantar o TêxtilFlow](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fgui130699%2Ftextilflow). O arquivo `render.yaml` configura um único Web Service gratuito. Confirme que o plano selecionado é **Free**.
-2. Prepare uma conta de serviço dedicada no projeto Firebase com os papéis **Cloud Datastore User** e **Firebase Authentication Admin**. Ela permite executar operações Firestore e administrar os perfis que o próprio aplicativo gerencia. Evite usar uma credencial de proprietário do projeto.
+2. Prepare uma conta de serviço dedicada no projeto Firebase com **Cloud Datastore User** e um papel de autenticação limitado a `firebaseauth.users.get` e `firebaseauth.users.update`. Ela permite executar operações Firestore, verificar a sessão e atualizar perfis. Use uma identidade administrativa separada para provisionar o primeiro inspetor.
 3. No serviço do Render, adicione um **Secret File** chamado `firebase-admin.json` com a credencial da conta de serviço. O SDK procura o arquivo em `/etc/secrets/firebase-admin.json`. Mantenha a credencial fora do Git, do frontend, dos logs e das mensagens.
 4. Publique o serviço, aguarde o estado **Live** e confira o endereço emitido pelo Render. Em Authentication, acrescente o domínio publicado à lista de domínios autorizados.
 5. Provisione o primeiro inspetor com o procedimento de [implantação](DEPLOY.md#primeiro-inspetor). Verifique login, uma operação real com a empresa do inspetor e as restrições de acesso antes de liberar o piloto para a equipe.

@@ -28,7 +28,7 @@ Registro inicial: 10/11/2026. Este documento distingue código executável, vali
 
 A configuração de [Render Free](PILOT.md) reutiliza o Firebase Auth e o Firestore Spark. A API Next.js verifica tokens Firebase e chama as mesmas operações de negócio das Cloud Functions. O piloto mantém cadastros, relatórios e movimentações. Anexos e imagens estão desativados nesse modo.
 
-A implantação do piloto depende de acesso à conta Render, configuração do Secret File do Firebase e homologação no endereço emitido pelo serviço.
+A [tela de login do piloto](https://textilflow-piloto.onrender.com/login) respondeu HTTP 200 no Render Free. A API rejeitou uma chamada sem sessão com HTTP 401. O domínio foi autorizado no Firebase Authentication. A conta de serviço dedicada foi preparada. A conexão autenticada com o Firebase ainda depende do Secret File no Render e da homologação no endereço público.
 
 ## Pendências para publicação pelo App Hosting
 
