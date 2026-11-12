@@ -39,7 +39,7 @@ Integração e E2E precisam dos emuladores. E2E também precisa do seed. O Playw
 
 ## Produção
 
-Projeto dedicado: `textilflow-gui130699`. Firestore Standard em São Paulo (`southamerica-east1`). GitHub: https://github.com/gui130699/textilflow, privado, branch `main`.
+Projeto dedicado: `textilflow-gui130699`. Firestore Standard em São Paulo (`southamerica-east1`). GitHub: https://github.com/gui130699/textilflow, público, branch `main`.
 
 Consulte [DEPLOY](docs/DEPLOY.md) antes de publicar. O plano Blaze exige autorização explícita. As variáveis `NEXT_PUBLIC_FIREBASE_*` são configuração pública do SDK; credenciais administrativas nunca entram no frontend ou no Git.
 

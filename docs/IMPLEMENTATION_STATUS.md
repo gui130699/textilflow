@@ -13,7 +13,7 @@ Registro inicial: 10/11/2026. Este documento distingue código executável, vali
 | Relatórios    | Projetos, atrasos, cortes líquidos diários, saldos por terceiro/lote, histórico e inspeções, filtros, CSV e impressão                                                                                                          |
 | Alertas       | Atrasos, inspeção e modelagem pendentes, produção parada, terceiros vencidos, divergências e conclusão                                                                                                                         |
 | Firebase real | Projeto `textilflow-gui130699`, web app, Authentication e Firestore Standard em São Paulo criados. Regras e Authentication publicados e 174 índices conferidos. Sem dados fictícios em produção                                |
-| GitHub        | Repositório privado `gui130699/textilflow`, branch principal `main`; código e workflow Quality publicados                                                                                                                      |
+| GitHub        | Repositório público `gui130699/textilflow`, branch principal `main`; código e workflow Quality publicados                                                                                                                      |
 | Produção      | Functions, Storage e App Hosting ainda não publicados. Faturamento não ativado; não há URL de aplicação online verificada                                                                                                      |
 
 ## Validação

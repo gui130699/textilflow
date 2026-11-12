@@ -24,7 +24,7 @@ Referências oficiais: [regiões](https://firebase.google.com/docs/app-hosting/a
 npx firebase-tools deploy --only firestore,auth,functions,storage --project textilflow-gui130699
 ```
 
-Conferir todos os índices até atingirem estado pronto. Para o App Hosting, preferir a conexão nativa com o repositório privado `gui130699/textilflow`, branch `main`, raiz `/`, backend `textilflow`, região `us-east4`. A instalação/autorização da integração GitHub deve ter acesso apenas ao repositório necessário. Não criar um segundo backend se já existir.
+Conferir todos os índices até atingirem estado pronto. Para o App Hosting, preferir a conexão nativa com o repositório `gui130699/textilflow`, branch `main`, raiz `/`, backend `textilflow`, região `us-east4`. A instalação/autorização da integração GitHub deve ter acesso apenas ao repositório necessário. Não criar um segundo backend se já existir.
 
 Alternativa de deploy da fonte local autorizada:
 
