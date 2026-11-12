@@ -3,7 +3,8 @@
 ## Architecture
 
 - Next.js App Router, React, strict TypeScript, Tailwind, shadcn-style Radix components.
-- All business writes go through Firebase callable Cloud Functions in `functions/src`.
+- All business writes go through the shared operations in `functions/src/operations.ts`. Firebase callables and the Render pilot API both use these operations.
+- The pilot API verifies Firebase ID tokens and only exposes the explicit operation allowlist. File uploads are disabled in that mode.
 - `functions/src/domain.ts` is the shared Zod contract. Do not import Admin SDK into client code.
 - `src/features` contains workflows, `src/services` callable transport, `src/hooks` session and pagination.
 - Firestore Standard, production region `southamerica-east1`. Project `textilflow-gui130699`.

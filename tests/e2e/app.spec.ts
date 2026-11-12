@@ -39,7 +39,7 @@ test("recuperação de senha", async ({ page }) => {
   await page.getByLabel("E-mail", { exact: true }).fill(credentials.email);
   await page.getByRole("button", { name: "Esqueci minha senha" }).click();
   await page.getByRole("button", { name: "Enviar instruções" }).click();
-  await expect(page.getByRole("status")).toContainText(
+  await expect(page.locator(".notice[role=status]")).toContainText(
     "instruções de recuperação",
   );
 });
@@ -51,7 +51,9 @@ test("dashboard, projeto e reconciliação", async ({ page }) => {
   await page
     .getByRole("button", { name: "Conferir saldos com histórico" })
     .click();
-  await expect(page.getByRole("status")).toContainText("sem divergências");
+  await expect(page.locator(".notice[role=status]")).toContainText(
+    "sem divergências",
+  );
   await page.screenshot({
     path: "test-results/dashboard-project.png",
     fullPage: true,
@@ -64,7 +66,9 @@ test("cadastro, pesquisa e edição real de cliente", async ({ page }) => {
   const name = `Cliente navegador ${Date.now()}`;
   await page.getByLabel("Nome / descrição").fill(name);
   await page.getByRole("button", { name: "Salvar registro" }).click();
-  await expect(page.getByRole("status")).toContainText("salvo com sucesso");
+  await expect(page.locator(".notice[role=status]")).toContainText(
+    "salvo com sucesso",
+  );
   await page.getByLabel("Pesquisar registros").fill(name);
   await page.getByRole("button", { name, exact: true }).click();
   await page
@@ -189,6 +193,10 @@ for (const [kind, label] of [
 test("anexo real valida conteúdo, permite download e é visível ao proprietário autorizado", async ({
   page,
 }) => {
+  test.skip(
+    process.env.NEXT_PUBLIC_API_MODE === "server",
+    "Anexos indisponíveis no piloto",
+  );
   await login(page);
   await page.goto("/projetos/itaborai");
   await page.getByRole("tab", { name: "Fotos e anexos", exact: true }).click();
@@ -225,6 +233,10 @@ test("anexo real valida conteúdo, permite download e é visível ao proprietár
 test("imagem de modelo é enviada e carregada pelo Storage autenticado", async ({
   page,
 }) => {
+  test.skip(
+    process.env.NEXT_PUBLIC_API_MODE === "server",
+    "Imagens indisponíveis no piloto",
+  );
   await login(page);
   await page.goto("/cadastros/models");
   await page.getByLabel("Pesquisar registros").fill("Camiseta básica");
@@ -237,4 +249,23 @@ test("imagem de modelo é enviada e carregada pelo Storage autenticado", async (
   await expect(
     page.getByRole("img", { name: "Imagem do modelo", exact: true }),
   ).toBeVisible();
+});
+
+test("API do piloto rejeita sessão ausente ou inválida e bloqueia a rota de anexos", async ({
+  request,
+}) => {
+  test.skip(process.env.NEXT_PUBLIC_API_MODE !== "server", "Apenas no piloto");
+  const missing = await request.post("/api/operations/companiesForUser", {
+    data: {},
+  });
+  expect(missing.status()).toBe(401);
+  const invalid = await request.post("/api/operations/companiesForUser", {
+    headers: { Authorization: "Bearer fake-token" },
+    data: {},
+  });
+  expect(invalid.status()).toBe(401);
+  const upload = await request.post("/api/operations/saveAttachment", {
+    data: {},
+  });
+  expect(upload.status()).toBe(404);
 });

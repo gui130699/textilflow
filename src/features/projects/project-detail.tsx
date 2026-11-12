@@ -29,7 +29,7 @@ import { Feedback, Loading } from "@/components/feedback";
 import { OperationForm } from "@/features/production/operation-form";
 import { ProjectForm } from "./project-form";
 import { accountLabels, movementLabels } from "@/config/catalogs";
-import { call } from "@/services/api";
+import { call, serverApi } from "@/services/api";
 import { useLabels } from "@/hooks/use-labels";
 export function ProjectDetail({
   id,
@@ -287,16 +287,18 @@ export function ProjectDetail({
           ["production", "Produção"],
           ["files", "Fotos e anexos"],
           ["history", "Histórico"],
-        ].map(([key, label]) => (
-          <button
-            key={key}
-            role="tab"
-            aria-selected={tab === key}
-            onClick={() => setTab(key)}
-          >
-            {label}
-          </button>
-        ))}
+        ]
+          .filter(([key]) => !serverApi || key !== "files")
+          .map(([key, label]) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+            >
+              {label}
+            </button>
+          ))}
       </div>
       {tab === "overview" ? (
         <div className="detail-grid">

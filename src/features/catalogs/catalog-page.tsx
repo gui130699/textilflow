@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table";
 import { Feedback, Loading } from "@/components/feedback";
 import { FormField } from "@/components/fields";
-import { call } from "@/services/api";
+import { call, serverApi } from "@/services/api";
 import { Row } from "@/types";
 import { catalogSchema } from "../../../functions/src/domain";
 import { errorMessage, formatDate } from "@/lib/utils";
@@ -234,7 +234,8 @@ export function CatalogPage({ kind }: { kind: string }) {
                 </div>
               </fieldset>
               <Feedback error={error} />
-              {Boolean(editing.name) &&
+              {!serverApi &&
+                Boolean(editing.name) &&
                 ["companies", "models"].includes(kind) && (
                   <CatalogImage
                     companyId={kind === "companies" ? editing.id : company!.id}

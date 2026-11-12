@@ -24,7 +24,13 @@ Registro inicial: 10/11/2026. Este documento distingue código executável, vali
 - Compilação das regras validada por dry-run. Firestore e Authentication publicados.
 - O [workflow Quality](https://github.com/gui130699/textilflow/actions/runs/43024479740) passou no commit `8c48691`.
 
-## Pendências externas para publicação
+## Piloto online sem Blaze
+
+A configuração de [Render Free](PILOT.md) reutiliza o Firebase Auth e o Firestore Spark. A API Next.js verifica tokens Firebase e chama as mesmas operações de negócio das Cloud Functions. O piloto mantém cadastros, relatórios e movimentações. Anexos e imagens estão desativados nesse modo.
+
+A implantação do piloto depende de acesso à conta Render, configuração do Secret File do Firebase e homologação no endereço emitido pelo serviço.
+
+## Pendências para publicação pelo App Hosting
 
 1. Autorização explícita do responsável e ativação do Blaze em conta de faturamento própria.
 2. Confirmação de `us-east4` para App Hosting, que não oferece região brasileira na documentação consultada.

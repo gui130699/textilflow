@@ -15,6 +15,7 @@ coverage/
 *.tsbuildinfo
 *serviceAccount*.json
 *service-account*.json
+firebase-admin.json
 .vercel/
 .DS_Store
 
