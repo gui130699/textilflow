@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -13,10 +14,12 @@ import { call } from "@/services/api";
 import { Button } from "@/components/ui/button";
 import { Feedback } from "@/components/feedback";
 import { errorMessage } from "@/lib/utils";
+const validToken = /^[a-f0-9]{64}$/;
 export default function Invite() {
   const session = useSession(),
     router = useRouter(),
     [token, setToken] = useState(""),
+    [inviteLink, setInviteLink] = useState(""),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [existing, setExisting] = useState(false),
@@ -26,15 +29,35 @@ export default function Invite() {
   useEffect(() => {
     // The fragment is intentionally read only in the browser, never sent to SSR.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setToken(location.hash.slice(1));
+    setToken(
+      validToken.test(location.hash.slice(1)) ? location.hash.slice(1) : "",
+    );
   }, []);
+  function openInvite(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    try {
+      const link = new URL(inviteLink.trim());
+      const code = link.hash.slice(1);
+      if (
+        link.origin !== location.origin ||
+        link.pathname.replace(/\/$/, "") !== "/convite" ||
+        !validToken.test(code)
+      ) {
+        throw Error();
+      }
+      history.replaceState(history.state, "", "/convite#" + code);
+      setToken(code);
+    } catch {
+      setError("Cole o link completo do convite enviado pelo seu inspetor.");
+    }
+  }
   async function enter(e: React.FormEvent) {
     e.preventDefault();
     try {
       setBusy(true);
       setError("");
-      if (!/^[a-f0-9]{64}$/.test(token))
-        throw Error("Link de convite inválido.");
+      if (!validToken.test(token)) throw Error("Link de convite inválido.");
       if (existing) await signInWithEmailAndPassword(auth, email, password);
       else {
         await createUserWithEmailAndPassword(auth, email, password);
@@ -73,13 +96,30 @@ export default function Invite() {
             Têxtil<span>Flow</span>
           </span>
         </div>
-        <h1>Você recebeu um convite.</h1>
+        <h1>{token ? "Você recebeu um convite." : "Criar conta"}</h1>
         <p>
-          Use o e-mail indicado pelo inspetor. O acesso só será liberado após a
-          confirmação do seu e-mail e do convite.
+          {token
+            ? "Use o e-mail indicado pelo inspetor. O acesso só será liberado após a confirmação do seu e-mail e do convite."
+            : "Cole o link que seu inspetor enviou para iniciar o cadastro. Se ainda não recebeu um convite, solicite um ao seu inspetor."}
         </p>
         <Feedback error={error} success={success} />
-        {session.user ? (
+        {!token ? (
+          <form onSubmit={openInvite}>
+            <label htmlFor="invite-link">Link do convite</label>
+            <input
+              id="invite-link"
+              type="url"
+              autoComplete="off"
+              required
+              value={inviteLink}
+              onChange={(e) => setInviteLink(e.target.value)}
+            />
+            <Button>Continuar com convite</Button>
+            <Link className="text-link block" href="/login">
+              Voltar ao login
+            </Link>
+          </form>
+        ) : session.user ? (
           <>
             <p className="mt-5">Conectado como {session.user.email}</p>
             <Button disabled={busy} onClick={accept}>

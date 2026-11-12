@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
@@ -178,6 +179,11 @@ export default function Login() {
               </button>
             )}
           </form>
+          {!reset && (
+            <Button asChild variant="outline" className="login-signup">
+              <Link href="/convite">Criar conta</Link>
+            </Button>
+          )}
           <p className="invite-note">
             <ShieldCheck size={16} />O acesso é disponibilizado por convite do
             seu inspetor.
