@@ -5,7 +5,7 @@
 // operational children: immutable events and backend-maintained balances.
 // attachments: ownerVisible:boolean, path:string, contentType, size, createdAt.
 // users: private profile. users/{uid}/companies: backend membership discovery.
-// No client writes are allowed. Domain validation is enforced in Cloud Functions.
+// Spark client writes are allowed only for explicitly validated operations.
 // Queries are scoped to a company/project; owners filter ownerVisible attachments.
 rules_version = '2';
 service cloud.firestore {
@@ -18,25 +18,553 @@ service cloud.firestore {
   function projectExists(c,p){return exists(/databases/$(database)/documents/companies/$(c)/projects/$(p));}
   function catalog(k){return k in ['clients','thirdParties','suppliers','materials','products','models','colors','sizes','grades','units','rejectionReasons','inspectionTypes','modules','categories'];}
   function event(k){return k in ['materialReceipts','inspections','modeling','productionMovements','productionBalances','activityLog','reversals'];}
-  match /users/{uid} {
-   allow read: if isOwner(uid);
-   allow write: if false;
-   match /companies/{companyId} {allow read: if isOwner(uid);allow write: if false;}
+
+  // Spark uses the existing company/member/link documents. A verified profile alone
+  // has no company permissions. Only a new CNPJ, an approved request or a consumed
+  // owner invitation can create a membership from a browser.
+  function verified(){return signedIn() && request.auth.token.email_verified == true;}
+  function uid(){return request.auth.uid;}
+  function cp(c){return /databases/$(database)/documents/companies/$(c);}
+  function mp(c,u){return /databases/$(database)/documents/companies/$(c)/members/$(u);}
+  function lp(c,u){return /databases/$(database)/documents/users/$(u)/companies/$(c);}
+  function rp(c,u){return /databases/$(database)/documents/companies/$(c)/inspectorRequests/$(u);}
+  function up(u){return /databases/$(database)/documents/users/$(u);}
+  function registry(t){return /databases/$(database)/documents/companyCnpjs/$(t);}
+  function ip(i){return /databases/$(database)/documents/sparkInvites/$(i);}
+  function projectPath(c,p){return /databases/$(database)/documents/companies/$(c)/projects/$(p);}
+  function lotPath(c,p,l){return /databases/$(database)/documents/companies/$(c)/projects/$(p)/productionBalances/$(l);}
+  function assignmentPath(c,p,a){return /databases/$(database)/documents/companies/$(c)/projects/$(p)/lotAssignments/$(a);}
+  function key(v){return v is string && v.matches('^[A-Za-z0-9_-]{1,128}$');}
+  function str(v,n){return v is string && v.size() <= n;}
+  function label(v,n){return str(v,n) && v.size() >= 2;}
+  function exact(m,k){return m.keys().hasAll(k) && m.keys().hasOnly(k);}
+  function created(d){return d.createdAt == request.time && d.createdBy == uid();}
+  function updated(d){return d.updatedAt == request.time && d.updatedBy == uid();}
+  function writer(c){return verified() && inspector(c);}
+  function first(c){return writer(c) && get(cp(c)).data.createdBy == uid();}
+  function registered(){
+   return verified() && (request.auth.token.get('inspector',false) == true ||
+     get(up(uid())).data.get('inspectorRegistered',false) == true);
   }
-  match /companies/{companyId} {
-   allow read: if member(companyId);
-   allow write: if false;
-   match /members/{uid} {allow read: if inspector(companyId) || (member(companyId) && isOwner(uid));allow write: if false;}
-   match /assets/{assetId} {allow read: if member(companyId);allow write: if false;}
-   match /{kind}/{recordId} {allow read: if catalog(kind) && member(companyId);allow write: if false;}
-   match /activityLog/{logId} {allow read: if inspector(companyId);allow write: if false;}
-   match /projects/{projectId} {
-    allow read: if member(companyId);
-    allow write: if false;
-    match /{kind}/{recordId} {allow read: if event(kind) && member(companyId) && projectExists(companyId,projectId);allow write: if false;}
-    match /attachments/{attachmentId} {allow read: if member(companyId) && projectExists(companyId,projectId) && (inspector(companyId) || resource.data.ownerVisible == true);allow write: if false;}
+  function basicProfile(d){
+   return label(d.name,120) && str(d.get('phone',''),2000) &&
+     d.get('inspectorRegistered',false) is bool;
+  }
+  function newCompany(c,u){
+   return u == uid() && registered() && !exists(cp(c)) &&
+     getAfter(cp(c)).data.createdBy == u && getAfter(cp(c)).data.active == true;
+  }
+  function currentInspector(c,u){
+   let m = get(mp(c,u)).data;
+   return m.active == true && m.role == 'inspector';
+  }
+  function approved(c,u){
+   return first(c) && u != uid() && get(rp(c,u)).data.status == 'pending' &&
+     getAfter(rp(c,u)).data.status == 'approved' && getAfter(rp(c,u)).data.reviewedAt == request.time;
+  }
+  function consumed(c,u,i){
+   return verified() && u == uid() && i is string && i.matches('^[a-f0-9]{64}$') &&
+     get(ip(i)).data.used == false && getAfter(ip(i)).data.companyId == c &&
+     getAfter(ip(i)).data.usedBy == u && getAfter(ip(i)).data.usedAt == request.time;
+  }
+  function validMember(c,u,d){
+   return d.active == true && label(d.name,120) && d.createdAt == request.time &&
+     getAfter(lp(c,u)).data.companyId == c &&
+     ((d.role == 'inspector' && exact(d,['role','active','name','createdAt']) &&
+       (newCompany(c,u) || (approved(c,u) && d.name == get(rp(c,u)).data.name))) ||
+      (d.role == 'owner' && exact(d,['role','active','name','createdAt','inviteId']) && consumed(c,u,d.inviteId)));
+  }
+  function validLink(c,u,d){
+   let m = getAfter(mp(c,u)).data;
+   return exact(d,['companyId']) && d.companyId == c && m.active == true &&
+     m.createdAt == request.time &&
+     ((m.role == 'inspector' && (newCompany(c,u) || approved(c,u))) ||
+      (m.role == 'owner' && consumed(c,u,m.inviteId)));
+  }
+  function validCnpjFormat(t){return t is string && t.matches('^[A-Z0-9]{12}[0-9]{2}$');}
+  // CNPJ uses the ASCII offset defined for its numeric/alphanumeric check digits.
+  function cnpjDigit(total){return total % 11 < 2 ? 0 : 11 - total % 11;}
+  function validCnpjChecksum(t){
+   let chars = {'0':0,'1':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'A':17,'B':18,'C':19,'D':20,'E':21,'F':22,'G':23,'H':24,'I':25,'J':26,'K':27,'L':28,'M':29,'N':30,'O':31,'P':32,'Q':33,'R':34,'S':35,'T':36,'U':37,'V':38,'W':39,'X':40,'Y':41,'Z':42};
+   let first = chars[t[0]] * 5 + chars[t[1]] * 4 + chars[t[2]] * 3 + chars[t[3]] * 2 + chars[t[4]] * 9 + chars[t[5]] * 8 + chars[t[6]] * 7 + chars[t[7]] * 6 + chars[t[8]] * 5 + chars[t[9]] * 4 + chars[t[10]] * 3 + chars[t[11]] * 2;
+   let second = chars[t[0]] * 6 + chars[t[1]] * 5 + chars[t[2]] * 4 + chars[t[3]] * 3 + chars[t[4]] * 2 + chars[t[5]] * 9 + chars[t[6]] * 8 + chars[t[7]] * 7 + chars[t[8]] * 6 + chars[t[9]] * 5 + chars[t[10]] * 4 + chars[t[11]] * 3 + chars[t[12]] * 2;
+   return chars[t[12]] == cnpjDigit(first) && chars[t[13]] == cnpjDigit(second) &&
+     !(t in ['00000000000000','11111111111111','22222222222222','33333333333333','44444444444444','55555555555555','66666666666666','77777777777777','88888888888888','99999999999999']);
+  }
+  function catalogFields(){
+   return ['name','tradeName','legalName','taxId','personType','stateRegistration','contact','phone','whatsapp','email','address','number','complement','neighborhood','city','state','zip','notes','category','type','composition','color','unit','supplierId','productId','services','averageDays','technicalNotes','image','order','operationalType','required','active','companyId','searchName','createdAt','createdBy','updatedAt','updatedBy'];
+  }
+  function catalogStrings(d){
+   return str(d.tradeName,2000) && str(d.legalName,2000) && str(d.stateRegistration,2000) &&
+     str(d.contact,2000) && str(d.phone,2000) && str(d.whatsapp,2000) && str(d.email,254) &&
+     str(d.address,2000) && str(d.number,2000) && str(d.complement,2000) && str(d.neighborhood,2000) &&
+     str(d.city,2000) && str(d.state,2000) && str(d.zip,2000) && str(d.notes,2000) &&
+     str(d.category,2000) && str(d.type,2000) && str(d.composition,2000) &&
+     str(d.color,2000) && str(d.unit,2000) && str(d.technicalNotes,2000);
+  }
+  function validCatalog(c,d){
+   return d.companyId == c && label(d.name,160) && label(d.searchName,200) && d.active is bool &&
+     d.personType in ['Física','Jurídica'] && str(d.taxId,14) &&
+     d.taxId.matches('^(|[0-9]{11}|[A-Z0-9]{12}[0-9]{2})$') && catalogStrings(d) &&
+     d.averageDays is int && d.averageDays >= 0 && d.averageDays <= 365 &&
+     d.order is int && d.order >= 0 && d.order <= 100 && d.required is bool &&
+     d.services is list && d.services.size() <= 20 &&
+     d.operationalType in ['recebimento','inspecao','modelagem','corte','estamparia','costura','embalagem','despacho'] &&
+     (d.supplierId == '' || (key(d.supplierId) && get(/databases/$(database)/documents/companies/$(c)/suppliers/$(d.supplierId)).data.active == true)) &&
+     (d.productId == '' || (key(d.productId) && get(/databases/$(database)/documents/companies/$(c)/products/$(d.productId)).data.active == true)) &&
+     updated(d);
+  }
+  function createCatalog(c,d){
+   return exact(d,catalogFields()) && validCatalog(c,d) && created(d) && d.image == '';
+  }
+  function editCatalog(c,d){
+   return d.diff(resource.data).affectedKeys().hasOnly(catalogFields().removeAll(['createdAt','createdBy'])) &&
+     validCatalog(c,d) && d.image == resource.data.get('image','');
+  }
+  function pendingRequest(c,u,d){
+   return isOwner(u) && registered() && get(cp(c)).data.active == true &&
+     validCnpjFormat(get(cp(c)).data.taxId) && get(registry(get(cp(c)).data.taxId)).data.companyId == c &&
+     exact(d,['status','email','name','createdAt']) && d.status == 'pending' &&
+     d.email == request.auth.token.email && str(d.email,254) && label(d.name,120) && d.createdAt == request.time;
+  }
+  function decideRequest(c,u,d){
+   return first(c) && u != uid() && resource.data.status == 'pending' &&
+     d.diff(resource.data).affectedKeys().hasOnly(['status','reviewedAt','reviewedBy']) &&
+     d.reviewedBy == uid() && d.reviewedAt == request.time &&
+     (d.status == 'rejected' || (d.status == 'approved' &&
+        getAfter(mp(c,u)).data.role == 'inspector' &&
+        getAfter(mp(c,u)).data.createdAt == request.time &&
+        getAfter(lp(c,u)).data.companyId == c));
+  }
+  function recipient(d){
+   return verified() && request.auth.token.email is string && d.email == request.auth.token.email.lower();
+  }
+  function freshInvite(d){
+   return recipient(d) && d.used == false && d.createdAt <= request.time &&
+     request.time < d.createdAt + duration.value(48,'h') &&
+     get(cp(d.companyId)).data.active == true && currentInspector(d.companyId,d.createdBy);
+  }
+  function createInvite(i,d){
+   return i.matches('^[a-f0-9]{64}$') &&
+     exact(d,['companyId','email','role','createdBy','createdAt','used']) &&
+     key(d.companyId) && writer(d.companyId) && d.role == 'owner' &&
+     str(d.email,254) && d.email.matches('^[^@ ]+@[^@ ]+[.][^@ ]+$') && d.email == d.email.lower() &&
+     created(d) && d.used == false;
+  }
+  function useInvite(i,d){
+   let c = resource.data.companyId;
+   let m = getAfter(mp(c,uid())).data;
+   return freshInvite(resource.data) &&
+     d.diff(resource.data).affectedKeys().hasOnly(['used','usedBy','usedAt']) &&
+     d.used == true && d.usedBy == uid() && d.usedAt == request.time &&
+     m.role == 'owner' && m.inviteId == i && m.createdAt == request.time &&
+     getAfter(lp(c,uid())).data.companyId == c;
+  }
+  function assignLot(c,p,l,d){
+   let m = get(mp(c,d.inspectorUid)).data;
+   let a = assignmentPath(c,p,d.assignmentId);
+   return writer(c) && projectExists(c,p) && key(d.inspectorUid) && key(d.assignmentId) &&
+     d.diff(resource.data).affectedKeys().hasOnly(['inspectorUid','inspectorName','assignmentId']) &&
+     m.active == true && m.role == 'inspector' && d.inspectorName == m.get('name',d.inspectorUid) &&
+     !exists(a) && getAfter(a).data.lotId == l && getAfter(a).data.inspectorUid == d.inspectorUid;
+  }
+  function createAssignment(c,p,a,d){
+   return writer(c) && projectExists(c,p) && exact(d,['lotId','inspectorUid','createdBy','createdAt']) &&
+     key(d.lotId) && key(d.inspectorUid) && created(d) &&
+     getAfter(lotPath(c,p,d.lotId)).data.assignmentId == a &&
+     get(lotPath(c,p,d.lotId)).data.get('assignmentId','') != a &&
+     getAfter(lotPath(c,p,d.lotId)).data.inspectorUid == d.inspectorUid;
+  }
+
+  function activeCatalog(c,k,i){
+   return key(i) && get(/databases/$(database)/documents/companies/$(c)/$(k)/$(i)).data.active == true;
+  }
+  function dateString(v){return str(v,10) && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');}
+  function optionalKey(v){return v == '' || key(v);}
+  function idList(v,n){
+   return v is list && v.size() <= n &&
+     (v.size() == 0 || (v.join(',').matches('^[A-Za-z0-9_-]{1,128}(,[A-Za-z0-9_-]{1,128})*$') &&
+       v == v.join(',').split(',')));
+  }
+  function boundedInt(v,min,max){return v is int && v >= min && v <= max;}
+  function projectFields(){
+   return ['name','clientId','productId','modelId','planned','unit','openedOn','startsOn','dueOn','responsible','materialIds','thirdPartyIds','supplierIds','stages','moduleIds','notes','status','searchName','updatedAt','updatedBy','sparkChangeId'];
+  }
+  function projectStatuses(){
+   return ['Planejado','Aguardando material','Em inspeção','Aguardando modelagem','Em produção','Parcialmente concluído','Concluído','Suspenso','Cancelado'];
+  }
+  function validProject(c,d){
+   return label(d.name,160) && label(d.searchName,200) && label(d.responsible,160) &&
+     boundedInt(d.planned,1,10000000) && d.unit == 'unidade' &&
+     dateString(d.openedOn) && dateString(d.startsOn) && dateString(d.dueOn) &&
+     d.openedOn <= d.startsOn && d.startsOn <= d.dueOn &&
+     str(d.notes,2000) && d.status in projectStatuses() &&
+     d.stages is list && d.stages.hasAll(['corte','costura','embalagem','despacho']) &&
+     d.stages.hasOnly(['recebimento','inspecao','modelagem','corte','estamparia','costura','embalagem','despacho']) &&
+     d.stages.size() == d.stages.toSet().size() &&
+     idList(d.materialIds,50) && idList(d.thirdPartyIds,50) &&
+     idList(d.supplierIds,50) && idList(d.moduleIds,30) &&
+     activeCatalog(c,'clients',d.clientId) && activeCatalog(c,'products',d.productId) &&
+     (d.modelId == '' || (activeCatalog(c,'models',d.modelId) &&
+        get(/databases/$(database)/documents/companies/$(c)/models/$(d.modelId)).data.productId == d.productId)) &&
+     updated(d);
+  }
+  function projectChangePath(c,p,i){return /databases/$(database)/documents/companies/$(c)/projects/$(p)/projectChanges/$(i);}
+  function projectChange(c,p,d){
+   let path = projectChangePath(c,p,d.sparkChangeId);
+   return key(d.sparkChangeId) && !exists(path) && getAfter(path).data.createdAt == request.time &&
+     getAfter(path).data.createdBy == uid();
+  }
+  function changeReason(c,p,d){return getAfter(projectChangePath(c,p,d.sparkChangeId)).data.reason;}
+  function createProject(c,p,d){
+   return exact(d,projectFields().concat(['companyId','createdAt','createdBy','cut','shipped','printing','sewing','packing','packed','active','balances','modelingStatus','reconciliationOk'])) &&
+     d.companyId == c && created(d) && validProject(c,d) && projectChange(c,p,d) &&
+     d.active == true && d.cut == 0 && d.shipped == 0 && d.printing == 0 && d.sewing == 0 &&
+     d.packing == 0 && d.packed == 0 && d.balances == {} &&
+     d.modelingStatus == 'Aguardando liberação' && d.reconciliationOk == true &&
+     (!(d.status in ['Concluído','Cancelado']) || changeReason(c,p,d).size() >= 10);
+  }
+  function editProject(c,p,d){
+   let old = resource.data;
+   return d.diff(old).affectedKeys().hasOnly(projectFields()) && validProject(c,d) && projectChange(c,p,d) &&
+     d.planned >= old.cut && (d.planned == old.planned || changeReason(c,p,d).size() >= 5) &&
+     (old.cut == 0 || (d.stages == old.stages && d.moduleIds == old.moduleIds)) &&
+     (!(d.status in ['Concluído','Cancelado']) || changeReason(c,p,d).size() >= 10 ||
+       (old.cut == old.balances.get('despachado',0) + old.balances.get('perdas',0) &&
+        old.balances.get('despachado',0) >= d.planned));
+  }
+  function eventPath(c,p,k,i){return /databases/$(database)/documents/companies/$(c)/projects/$(p)/$(k)/$(i);}
+  function running(p){return !(p.status in ['Concluído','Cancelado','Suspenso']);}
+  function eventProjectUpdate(c,p,d){
+   let before = resource.data;
+   let path = eventPath(c,p,d.sparkEventKind,d.sparkEventId);
+   return running(before) && key(d.sparkEventId) &&
+     d.sparkEventKind in ['materialReceipts','inspections','modeling'] &&
+     d.diff(before).affectedKeys().hasOnly(['sparkEventId','sparkEventKind','updatedAt','updatedBy','modelingStatus']) &&
+     updated(d) && !exists(path) && getAfter(path).data.createdAt == request.time &&
+     d.modelingStatus == (d.sparkEventKind == 'modeling' ? getAfter(path).data.status : before.modelingStatus);
+  }
+  function eventBase(c,p,k,i,d){
+   let path = projectPath(c,p);
+   let project = get(path).data;
+   let after = getAfter(path).data;
+   return key(i) && d.operationId == i && d.companyId == c && d.projectId == p &&
+     running(project) && d.projectName == project.name && d.clientId == project.clientId && d.productId == project.productId &&
+     after.sparkEventKind == k && after.sparkEventId == i && after.updatedAt == request.time &&
+     created(d) && str(d.hash,64) && d.hash.matches('^[a-f0-9]{64}$') &&
+     dateString(d.occurredOn) && (d.dueOn == '' || dateString(d.dueOn)) &&
+     (d.requestedOn == '' || dateString(d.requestedOn)) &&
+     optionalKey(d.materialId) && optionalKey(d.supplierId) && optionalKey(d.receiptId) &&
+     d.unit in ['rolo','quilograma','metro','unidade','pacote'] &&
+     str(d.lot,2000) && str(d.color,2000) && str(d.reason,2000) && str(d.notes,2000) &&
+     str(d.document,2000) && str(d.responsible,2000) &&
+     scaledNumber(d.quantity,d.quantityScaled) && scaledNumber(d.approved,d.approvedScaled) &&
+     scaledNumber(d.rejected,d.rejectedScaled) && scaledNumber(d.weight,d.weightScaled) &&
+     (d.unit in ['quilograma','metro'] ||
+       (d.quantityScaled % 1000 == 0 && d.approvedScaled % 1000 == 0 && d.rejectedScaled % 1000 == 0));
+  }
+  function scaledNumber(raw,scaled){
+   return raw is number && boundedInt(scaled,0,10000000000) && raw == scaled / 1000.0;
+  }
+  function recordEvent(c,p,k,i,d){
+   let fields = ['occurredOn','materialId','supplierId','receiptId','lot','color','unit','quantity','weight','approved','rejected','reason','notes','document','responsible','status','dueOn','requestedOn','projectName','clientId','productId','quantityScaled','approvedScaled','rejectedScaled','weightScaled','companyId','projectId','operationId','hash','createdAt','createdBy'];
+   return writer(c) && eventBase(c,p,k,i,d) &&
+     ((k == 'materialReceipts' && exact(d,fields.concat(['pendingInspection','inspectedScaled'])) &&
+       d.status in ['Aguardando inspeção','Em inspeção'] && d.pendingInspection == true &&
+       d.inspectedScaled == 0 && d.quantityScaled > 0 &&
+       activeCatalog(c,'materials',d.materialId) && activeCatalog(c,'suppliers',d.supplierId)) ||
+      (k == 'inspections' && exact(d,fields) && d.status in ['Aprovado','Aprovado com ressalvas','Reprovado','Em inspeção'] &&
+       key(d.receiptId) && d.quantityScaled > 0 && d.approvedScaled + d.rejectedScaled == d.quantityScaled &&
+       (d.rejectedScaled == 0 || d.reason.size() > 0) &&
+       getAfter(eventPath(c,p,'materialReceipts',d.receiptId)).data.sparkInspectionId == i) ||
+      (k == 'modeling' && exact(d,fields) &&
+       d.status in ['Aguardando liberação','Em desenvolvimento','Liberada','Bloqueada']));
+  }
+  function inspectReceipt(c,p,r,d){
+   let old = resource.data;
+   let path = eventPath(c,p,'inspections',d.sparkInspectionId);
+   let inspection = getAfter(path).data;
+   return writer(c) && key(d.sparkInspectionId) && !exists(path) &&
+     d.diff(old).affectedKeys().hasOnly(['sparkInspectionId','pendingInspection','inspectedScaled']) &&
+     inspection.receiptId == r && inspection.createdAt == request.time && inspection.unit == old.unit &&
+     boundedInt(d.inspectedScaled,1,old.quantityScaled) &&
+     d.inspectedScaled == old.get('inspectedScaled',0) + inspection.quantityScaled &&
+     d.pendingInspection == (d.inspectedScaled < old.quantityScaled);
+  }
+
+
+  function movementPath(c,p,i){return eventPath(c,p,'productionMovements',i);}
+  function reversalPath(c,p,i){return eventPath(c,p,'reversals',i);}
+  function delta(a,n){return {'account':a,'quantity':n};}
+  function negate(d){return delta(d.account,-d.quantity);}
+  function inverse(ds){
+   return ds.size() == 1 ? [negate(ds[0])] :
+     ds.size() == 2 ? [negate(ds[0]),negate(ds[1])] :
+     [negate(ds[0]),negate(ds[1]),negate(ds[2])];
+  }
+  function external(m){return m.stage + ':' + m.thirdPartyId;}
+  function sendFrom(m,p){
+   return m.stage == 'costura' && 'estamparia' in p.stages ? 'estampa-pronta' : 'corte';
+  }
+  function receiveTo(m){return m.stage == 'estamparia' ? 'estampa-pronta' : 'costura-pronta';}
+  function validThird(c,m,p){
+   return m.stage in ['estamparia','costura'] && m.stage in p.stages &&
+     m.thirdPartyId in p.thirdPartyIds && activeCatalog(c,'thirdParties',m.thirdPartyId);
+  }
+  function validMovementKind(c,p,m,d){
+   let q = m.quantity;
+   let a = m.queueAccount;
+   return (m.kind == 'cut' && d.modelingStatus == 'Liberada' &&
+      m.deltas == [delta('corte',q)] && m.cutDelta == q && a == '' && m.source == '' && m.destination == 'corte') ||
+     (m.kind == 'send' && validThird(c,m,d) && dateString(m.dueOn) && m.cutDelta == 0 &&
+      a == external(m) && m.deltas == [delta(sendFrom(m,d),-q),delta(a,q)] &&
+      m.source == sendFrom(m,d) && m.destination == a) ||
+     (m.kind == 'receive' && validThird(c,m,d) && m.cutDelta == 0 && a == external(m) &&
+      m.deltas == [delta(a,-q),delta(receiveTo(m),q-m.defective),delta('quarentena',m.defective)] &&
+      m.source == a && m.destination ==
+        (m.defective == 0 ? receiveTo(m) : m.defective == q ? 'quarentena' : receiveTo(m) + ',quarentena')) ||
+     (m.kind == 'transfer' && m.cutDelta == 0 && a == '' &&
+      ((m.source == 'costura-pronta' && m.destination == 'embalagem') ||
+       (m.source == 'embalagem' && m.destination == 'embalado')) &&
+      m.deltas == [delta(m.source,-q),delta(m.destination,q)]) ||
+     (m.kind == 'dispatch' && m.cutDelta == 0 && a == '' && m.recipient.size() > 0 &&
+      m.source == 'embalado' && m.destination == 'despachado' &&
+      m.deltas == [delta('embalado',-q),delta('despachado',q)]) ||
+     (m.kind == 'loss' && m.cutDelta == 0 && a == '' && m.reason.size() > 0 && m.destination == 'perdas' &&
+      m.source in ['corte','estampa-pronta','costura-pronta','embalagem','embalado','quarentena'] &&
+      m.deltas == [delta(m.source,-q),delta('perdas',q)]) ||
+     (m.kind == 'reverse' && validReverse(c,p,m));
+  }
+  function validReverse(c,p,m){
+   let original = get(movementPath(c,p,m.reverses)).data;
+   let reversal = reversalPath(c,p,m.reverses);
+   return key(m.reverses) && m.reason.size() >= 5 && original.kind != 'reverse' && original.deltas.size() >= 1 && original.deltas.size() <= 3 &&
+     original.lotId == m.lotId && original.quantity == m.quantity &&
+     m.cutDelta == -original.cutDelta && m.deltas == inverse(original.deltas) &&
+     original.get('queueAccounts',[]) == m.queueAccounts && m.queueBefore == original.get('queueAfter',{}) &&
+     m.queueAfter == original.get('queueBefore',{}) && str(m.source,400) && str(m.destination,400) &&
+     !exists(reversal) && getAfter(reversal).data.operationId == m.operationId;
+  }
+  function externalNumbers(m){
+   let a = m.queueAccount;
+   let change =
+      (m.kind == 'send' ? m.quantity : (m.kind == 'receive' ? -m.quantity :
+       (m.deltas[0].account == a ? m.deltas[0].quantity : m.deltas[1].quantity)));
+   return m.printingDelta == (a.matches('^estamparia:.*$') ? change : 0) &&
+     m.sewingDelta == (a.matches('^costura:.*$') ? change : 0);
+  }
+  function changeFor(d,b,n){
+   return boundedInt(n.get(d.account,0),0,10000000) &&
+     n.get(d.account,0) == b.get(d.account,0) + d.quantity;
+  }
+  function adjust(ds,b,n){
+   let a = ds[0];
+   let changed = n.diff(b).affectedKeys();
+   return changeFor(a,b,n) &&
+     ((ds.size() == 1 && changed.hasOnly([a.account])) ||
+      (ds.size() == 2 && changed.hasOnly([a.account,ds[1].account]) && changeFor(ds[1],b,n)) ||
+      (ds.size() == 3 && changed.hasOnly([a.account,ds[1].account,ds[2].account]) &&
+       changeFor(ds[1],b,n) && changeFor(ds[2],b,n)));
+  }
+  function queueData(m,b,n){
+   let a = m.queueAccount;
+   return (a == '' && b == n && m.queueAccounts == [] && m.queueBefore == {} && m.queueAfter == {}) ||
+     (a != '' && n.diff(b).affectedKeys().hasOnly([a]) && m.queueAccounts == [a] &&
+      exact(m.queueBefore,[a]) && exact(m.queueAfter,[a]) &&
+      m.queueBefore[a] == b.get(a,[]) && m.queueAfter[a] == n.get(a,[]) &&
+      queueChange(m,b.get(a,[]),n.get(a,[])));
+  }
+  function queueTail(b){return b.size() <= 1 ? [] : b[1:b.size()];}
+  function queueChange(m,b,n){
+   return (m.kind == 'send' && b.size() < 100 &&
+      n == b.concat([{'operationId':m.operationId,'quantity':m.quantity,'dueOn':m.dueOn}])) ||
+     (m.kind == 'receive' && b.size() > 0 && m.quantity <= b[0].quantity &&
+      n == (m.quantity == b[0].quantity ? queueTail(b) :
+        [{'operationId':b[0].operationId,'quantity':b[0].quantity-m.quantity,'dueOn':b[0].dueOn}].concat(queueTail(b)))) ||
+     m.kind == 'reverse';
+  }
+  function moveFields(){
+   return ['companyId','projectId','operationId','lotId','kind','source','destination','quantity','defective',
+     'thirdPartyId','stage','dueOn','occurredOn','reason','recipient','document','reverses','colorId','sizeId',
+     'spark','hash','deltas','cutDelta','printingDelta','sewingDelta','queueAccount','queueAccounts','queueBefore',
+     'queueAfter','clientId','productId','projectName','unit','createdBy','recordedAt'];
+  }
+  function validMovement(c,p,i,m){
+   let path = projectPath(c,p);
+   let project = get(path).data;
+   let next = getAfter(path).data;
+   return writer(c) && key(i) && exact(m,moveFields()) && m.operationId == i &&
+     m.spark == true && m.recordedAt == request.time && m.createdBy == uid() &&
+     m.companyId == c && m.projectId == p && key(m.lotId) && running(project) &&
+     m.clientId == project.clientId && m.productId == project.productId && m.projectName == project.name &&
+     boundedInt(m.quantity,1,10000000) && boundedInt(m.defective,0,m.quantity) &&
+     dateString(m.occurredOn) && (m.dueOn == '' || dateString(m.dueOn)) &&
+     m.stage in ['costura','estamparia'] && optionalKey(m.thirdPartyId) && optionalKey(m.reverses) &&
+     optionalKey(m.colorId) && optionalKey(m.sizeId) && m.unit == 'unidade' &&
+     str(m.reason,2000) && str(m.recipient,2000) && str(m.document,2000) &&
+     str(m.hash,64) && m.hash.matches('^[a-f0-9]{64}$') &&
+     validMovementKind(c,p,m,project) && (m.queueAccount == '' ? (m.printingDelta == 0 && m.sewingDelta == 0) : externalNumbers(m)) &&
+     next.sparkMovementId == i && next.updatedAt == request.time &&
+     getAfter(lotPath(c,p,m.lotId)).data.sparkMovementId == i &&
+     getAfter(lotPath(c,p,m.lotId)).data.updatedAt == request.time;
+  }
+  function moveProject(c,p,d){
+   let old = resource.data;
+   let path = movementPath(c,p,d.sparkMovementId);
+   let m = getAfter(path).data;
+   return key(d.sparkMovementId) && !exists(path) && m.recordedAt == request.time &&
+     d.diff(old).affectedKeys().hasOnly(['sparkMovementId','cut','balances','shipped','printing','sewing','packing','packed','status','updatedAt','updatedBy']) &&
+     updated(d) && adjust(m.deltas,old.balances,d.balances) &&
+     boundedInt(d.cut,0,old.planned) && d.cut == old.cut + m.cutDelta &&
+     d.shipped == d.balances.get('despachado',0) && d.packing == d.balances.get('embalagem',0) &&
+     d.packed == d.balances.get('embalado',0) &&
+     boundedInt(d.printing,0,d.cut) && d.printing == old.get('printing',0) + m.printingDelta &&
+     boundedInt(d.sewing,0,d.cut) && d.sewing == old.get('sewing',0) + m.sewingDelta &&
+     d.status == (d.shipped > 0 ? 'Parcialmente concluído' : 'Em produção');
+  }
+  function lotFields(){
+   return ['companyId','projectId','lotId','inspectorUid','inspectorName','colorId','sizeId','balances',
+     'externalQueues','nextDueOn','projectName','clientId','productId','updatedOn','sparkMovementId','updatedAt','updatedBy'];
+  }
+  function moveLot(c,p,l,d,creating){
+   let path = movementPath(c,p,d.sparkMovementId);
+   let m = getAfter(path).data;
+   let before = creating ? {} : resource.data;
+   return writer(c) && key(d.sparkMovementId) && !exists(path) && m.recordedAt == request.time &&
+     m.lotId == l && d.companyId == c && d.projectId == p && d.lotId == l &&
+     d.colorId == m.colorId && d.sizeId == m.sizeId &&
+     d.projectName == m.projectName && d.clientId == m.clientId && d.productId == m.productId &&
+     updated(d) && dateString(d.updatedOn) && dateString(d.nextDueOn) &&
+     (creating ? (exact(d,lotFields()) && m.kind == 'cut' && d.inspectorUid == uid() &&
+       d.inspectorName == get(mp(c,uid())).data.get('name',uid())) :
+       (d.diff(before).affectedKeys().hasOnly(lotFields()) &&
+        d.colorId == before.colorId && d.sizeId == before.sizeId &&
+        d.inspectorUid == before.get('inspectorUid',uid()) &&
+        d.inspectorName == before.get('inspectorName',get(mp(c,uid())).data.get('name',uid())))) &&
+     adjust(m.deltas,before.get('balances',{}),d.balances) &&
+     queueData(m,before.get('externalQueues',{}),d.externalQueues);
+  }
+  function markReversed(c,p,i,d){
+   let m = getAfter(movementPath(c,p,d.operationId)).data;
+   return writer(c) && exact(d,['operationId','createdAt','createdBy']) && key(d.operationId) &&
+     created(d) && m.kind == 'reverse' && m.reverses == i && m.recordedAt == request.time;
+  }
+
+  match /users/{u} {
+   allow read: if isOwner(u);
+   allow create: if isOwner(u) && basicProfile(request.resource.data) &&
+     request.resource.data.keys().hasOnly(['name','phone','inspectorRegistered','updatedAt']) &&
+     (!request.resource.data.get('inspectorRegistered',false) || verified()) &&
+     request.resource.data.get('updatedAt',request.time) == request.time;
+   allow update: if isOwner(u) && basicProfile(request.resource.data) &&
+     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','phone','inspectorRegistered','updatedAt']) &&
+     (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['inspectorRegistered']) ||
+       (verified() && request.resource.data.inspectorRegistered == true)) &&
+     (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['updatedAt']) || request.resource.data.updatedAt == request.time);
+   match /companies/{c} {
+    allow read: if isOwner(u);
+    allow create, update: if validLink(c,u,request.resource.data);
    }
   }
+  match /companyCnpjs/{t} {
+   // Exact CNPJ lookup only; the index returns an opaque company ID, never company data.
+   allow get: if registered() && validCnpjFormat(t);
+   allow create: if registered() && validCnpjFormat(t) && validCnpjChecksum(t) &&
+     exact(request.resource.data,['companyId']) && key(request.resource.data.companyId) &&
+     newCompany(request.resource.data.companyId,uid()) &&
+     getAfter(cp(request.resource.data.companyId)).data.taxId == t;
+  }
+  match /sparkInvites/{i} {
+   allow get: if freshInvite(resource.data);
+   allow create: if createInvite(i,request.resource.data);
+   allow update: if useInvite(i,request.resource.data);
+  }
+  match /companies/{c} {
+   allow read: if member(c);
+   allow create: if registered() && key(c) && createCatalog(c,request.resource.data) &&
+     request.resource.data.active == true && validCnpjFormat(request.resource.data.taxId) &&
+     !exists(registry(request.resource.data.taxId)) &&
+     getAfter(registry(request.resource.data.taxId)).data.companyId == c &&
+     getAfter(mp(c,uid())).data.role == 'inspector' &&
+     getAfter(mp(c,uid())).data.createdAt == request.time &&
+     getAfter(lp(c,uid())).data.companyId == c;
+   allow update: if writer(c) && editCatalog(c,request.resource.data) &&
+     request.resource.data.taxId == resource.data.taxId &&
+     request.resource.data.active == resource.data.active;
+   match /members/{u} {
+    allow get: if isOwner(u) || inspector(c);
+    allow list: if inspector(c);
+    allow create: if validMember(c,u,request.resource.data);
+    allow update: if
+     (validMember(c,u,request.resource.data) &&
+       (resource.data.role == request.resource.data.role || (approved(c,u) && resource.data.role == 'owner'))) ||
+     (writer(c) && u != uid() && u != get(cp(c)).data.createdBy &&
+       (resource.data.role == 'owner' || first(c)) &&
+       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active','updatedAt']) &&
+       request.resource.data.active is bool && request.resource.data.updatedAt == request.time);
+   }
+   match /inspectorRequests/{u} {
+    allow get: if (verified() && isOwner(u)) || first(c);
+    allow list: if first(c);
+    allow create: if pendingRequest(c,u,request.resource.data);
+    allow update: if (resource.data.status == 'rejected' && pendingRequest(c,u,request.resource.data)) ||
+      decideRequest(c,u,request.resource.data);
+   }
+   match /assets/{assetId} {allow read: if member(c);}
+   match /{kind}/{recordId} {
+    allow read: if catalog(kind) && member(c);
+    allow create: if catalog(kind) && key(recordId) && writer(c) && createCatalog(c,request.resource.data);
+    allow update: if catalog(kind) && writer(c) && editCatalog(c,request.resource.data);
+   }
+   match /activityLog/{logId} {allow read: if inspector(c);}
+   match /projects/{p} {
+    allow read: if member(c);
+    match /{kind}/{recordId} {allow read: if event(kind) && member(c) && projectExists(c,p);}
+    allow create: if key(p) && writer(c) && createProject(c,p,request.resource.data);
+    allow update: if writer(c) &&
+     (request.resource.data.get('sparkMovementId','') != resource.data.get('sparkMovementId','') ?
+       moveProject(c,p,request.resource.data) :
+      request.resource.data.get('sparkChangeId','') != resource.data.get('sparkChangeId','') ?
+       editProject(c,p,request.resource.data) : eventProjectUpdate(c,p,request.resource.data));
+    match /projectChanges/{i} {
+     allow read: if member(c) && projectExists(c,p);
+     allow create: if key(i) && writer(c) && exact(request.resource.data,['reason','createdAt','createdBy']) &&
+       str(request.resource.data.reason,2000) && created(request.resource.data) &&
+       getAfter(projectPath(c,p)).data.sparkChangeId == i &&
+       getAfter(projectPath(c,p)).data.updatedAt == request.time;
+    }
+    match /{k}/{i} {
+     allow create: if k in ['materialReceipts','inspections','modeling'] &&
+       recordEvent(c,p,k,i,request.resource.data);
+    }
+    match /materialReceipts/{r} {
+     allow update: if inspectReceipt(c,p,r,request.resource.data);
+    }
+    match /lotAssignments/{a} {
+     allow read: if member(c) && projectExists(c,p);
+     allow create: if createAssignment(c,p,a,request.resource.data);
+    }
+    match /productionMovements/{i} {
+     allow create: if validMovement(c,p,i,request.resource.data);
+    }
+    match /reversals/{i} {
+     allow create: if markReversed(c,p,i,request.resource.data);
+    }
+    match /productionBalances/{l} {
+     allow create: if moveLot(c,p,l,request.resource.data,true);
+     allow update: if request.resource.data.get('sparkMovementId','') != resource.data.get('sparkMovementId','') ? moveLot(c,p,l,request.resource.data,false) : assignLot(c,p,l,request.resource.data);
+    }
+    match /attachments/{attachmentId} {
+     allow read: if member(c) && projectExists(c,p) && (inspector(c) || resource.data.ownerVisible == true);
+    }
+   }
+  }
+  // All collection-group queries must include where(companyId, '==', activeCompany).
+  // These collections are written only at company/project paths.
+  match /{path=**}/materialReceipts/{d} {allow list: if member(resource.data.companyId);}
+  match /{path=**}/productionMovements/{d} {allow list: if member(resource.data.companyId);}
+  match /{path=**}/productionBalances/{d} {allow list: if member(resource.data.companyId);}
+  match /{path=**}/inspections/{d} {allow list: if member(resource.data.companyId);}
   match /{document=**} {allow read,write: if false;}
  }
 }

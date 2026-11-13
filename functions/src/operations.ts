@@ -24,7 +24,8 @@ import {
 } from "./domain";
 import { authorize, audit, move, reconcile } from "./production";
 import { validCnpj } from "./cnpj";
-import { lookupCompany } from "./company-lookup";
+import { eventSchema } from "./event-schema";
+import { lookupCompany, CompanyLookupError } from "./company-lookup";
 if (getApps().length === 0) initializeApp();
 const db = getFirestore();
 export function verifyOperationToken(token: string) {
@@ -48,6 +49,8 @@ function operation(fn: (r: OperationRequest) => Promise<unknown>) {
       return await fn(r);
     } catch (e) {
       if (e instanceof HttpsError) throw e;
+      if (e instanceof CompanyLookupError)
+        throw new HttpsError(e.code, e.message);
       if (e instanceof z.ZodError)
         throw new HttpsError(
           "invalid-argument",
@@ -550,44 +553,6 @@ export const saveProject = operation(async (r) => {
     });
   });
   return { id: input.id };
-});
-const eventSchema = context.extend({
-  operationId: id,
-  kind: z.enum(["materialReceipts", "inspections", "modeling"]),
-  data: z
-    .object({
-      occurredOn: date,
-      materialId: z.union([id, z.literal("")]).default(""),
-      supplierId: z.union([id, z.literal("")]).default(""),
-      receiptId: z.union([id, z.literal("")]).default(""),
-      lot: text.default(""),
-      color: text.default(""),
-      unit: z
-        .enum(["rolo", "quilograma", "metro", "unidade", "pacote"])
-        .default("rolo"),
-      quantity: z.number().nonnegative().max(10_000_000).default(0),
-      weight: z.number().nonnegative().max(10_000_000).default(0),
-      approved: z.number().nonnegative().max(10_000_000).default(0),
-      rejected: z.number().nonnegative().max(10_000_000).default(0),
-      reason: text.default(""),
-      notes: text.default(""),
-      document: text.default(""),
-      responsible: text.default(""),
-      status: z.enum([
-        "Aguardando inspeção",
-        "Em inspeção",
-        "Aprovado",
-        "Aprovado com ressalvas",
-        "Reprovado",
-        "Aguardando liberação",
-        "Em desenvolvimento",
-        "Liberada",
-        "Bloqueada",
-      ]),
-      dueOn: z.union([date, z.literal("")]).default(""),
-      requestedOn: z.union([date, z.literal("")]).default(""),
-    })
-    .strict(),
 });
 export const recordEvent = operation(async (r) => {
   const user = uid(r),

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:spark": "node scripts/build-spark.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit && npm --prefix functions run typecheck",

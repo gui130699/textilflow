@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { projectUrl } from "@/lib/project-url";
 import { useRouter } from "next/navigation";
 import {
   BarChart,
@@ -219,7 +220,7 @@ export default function DashboardPage() {
                     <div>
                       <h3>{a.name}</h3>
                       <p>{a.message}</p>
-                      <Link href={`/projetos/${a.projectId}`}>
+                      <Link href={projectUrl(a.projectId)}>
                         Acompanhar projeto →
                       </Link>
                     </div>
@@ -250,7 +251,7 @@ export default function DashboardPage() {
         </div>
         <DataTable
           rows={recent.rows.slice(0, 6)}
-          onRow={(p) => router.push(`/projetos/${p.id}`)}
+          onRow={(p) => router.push(projectUrl(p.id))}
           columns={[
             {
               accessorKey: "name",

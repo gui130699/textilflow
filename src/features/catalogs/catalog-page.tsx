@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/data-table";
 import { Feedback, Loading } from "@/components/feedback";
 import { FormField } from "@/components/fields";
-import { call, serverApi } from "@/services/api";
+import { call, filesEnabled, sparkApi } from "@/services/api";
 import { Row } from "@/types";
 import { catalogSchema } from "../../../functions/src/domain";
 import { normalizeDocument } from "../../../functions/src/cnpj";
@@ -289,6 +289,7 @@ export function CatalogPage({ kind }: { kind: string }) {
                           id="taxId"
                           placeholder="00.000.000/0000-00"
                           maxLength={22}
+                          required={sparkApi}
                           readOnly={Boolean(editing.taxId)}
                           {...register("taxId")}
                         />
@@ -341,7 +342,7 @@ export function CatalogPage({ kind }: { kind: string }) {
                 </div>
               </fieldset>
               <Feedback error={error} success={lookupSuccess} />
-              {!serverApi &&
+              {filesEnabled &&
                 Boolean(editing.name) &&
                 ["companies", "models"].includes(kind) && (
                   <CatalogImage

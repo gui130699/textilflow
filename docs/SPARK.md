@@ -1,0 +1,42 @@
+# Implantação gratuita no Firebase Hosting
+
+O build Spark usa Next.js estático, Firebase Authentication e o Firestore existente de São Paulo, no projeto `textilflow-gui130699`. O GitHub versiona o código e roda o Quality. O build Spark não usa SSR, API Routes, Render, Cloud Functions ou Storage. O piloto Render permanece disponível no modo `server` durante a transição.
+
+## Build e verificações
+
+- Node 22 e Java 21. Instale com `npm ci` e `npm --prefix functions ci`. O segundo instala o código legado para o Quality.
+- Rode `npm run lint`, `npm run typecheck`, `npm test` e `npm --prefix functions run build`.
+- `npm run build:spark -- --emulator` gera `out/` para testes. Use `demo-textilflow` para seed e testes. `NEXT_PUBLIC_API_MODE=firestore` faz o Playwright servir a saída estática; não substitua essa saída enquanto o navegador estiver testando.
+- `npm run build:spark` gera o artefato de publicação com o app Web existente e emuladores desligados. Não publique o artefato do emulador.
+- Projetos novos usam `/projetos/detalhe?id=<ID>`. Os IDs não precisam existir no build. O Render conserva as rotas antigas.
+- Confira o commit e o Quality antes da promoção oficial.
+
+## Operações e limites
+
+| Área                   | Transporte e condição                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Perfil e vínculos      | Login Auth; cadastro de inspetor exige e-mail verificado. O documento do CNPJ e os vínculos iniciais são atômicos. Empresa existente exige decisão do primeiro inspetor.                                                                                                                                                                                                               |
+| Convites               | Documento por hash, prazo de 48 horas calculado com tempo do servidor e transação de uso único por e-mail verificado. Spark convida proprietários; inspetores pedem acesso pelo CNPJ.                                                                                                                                                                                                  |
+| Cadastros e projetos   | SDK Web; escritas limitadas a inspetores ativos. Regras verificam chaves, vínculos principais e impedem alteração de saldos pelo formulário.                                                                                                                                                                                                                                           |
+| Recebimento e inspeção | Unidades em milésimos, sem ultrapassar o recebido; inspeção e atualização do recebimento na mesma transação. Modelagem atualiza o projeto junto do evento.                                                                                                                                                                                                                             |
+| Produção               | SDK Web transacional. As regras derivam as contas e deltas da operação, exigem lançamento imutável, saldo do lote e totais do projeto na mesma transação. Estorno usa registro exclusivo. Retorno de terceiros consome o envio mais antigo: quando abranger vários envios, registre um retorno por envio. Perda em terceiro deve ser registrada após o retorno para uma conta interna. |
+| Histórico              | Histórico operacional legado permanece; novos lançamentos são imutáveis. A conferência de saldos da versão Spark é só leitura. O detalhe permite consultar alterações do projeto e atribuições de lotes, além do histórico legado.                                                                                                                                                     |
+| CNPJ e arquivos        | Consultas públicas via CNPJ.ws e Minha Receita, sem credenciais. Se falharem, preencha manualmente. Fotos, logos e PDFs ficam fora da interface Spark; referências existentes são preservadas.                                                                                                                                                                                         |
+| Relatórios             | Filtros e paginação por empresa. O CSV exporta as páginas carregadas.                                                                                                                                                                                                                                                                                                                  |
+
+As regras impõem tipo, escopo, papéis, integridade numérica e alterações atômicas. O campo `nextDueOn` é um resumo de alerta calculado pelo cliente; a regra valida o formato e a mutação FIFO dos envios, mas não recalcula o menor prazo de todas as filas. As listas de vínculo do formulário do projeto são validadas pelo cliente; o Firestore valida seus IDs e os vínculos principais, e cada operação que movimenta um terceiro, material ou fornecedor valida a referência ativa na própria empresa. Revise esses limites antes de ampliar a homologação.
+
+A leitura de produção de 13/11/2026 retornou zero documentos em `companies` e `companyCnpjs`; os 174 índices existentes atendem ao modelo. Não migre contas nem rode seed em produção. Antes de ativar a escrita Spark, repita a comparação de CNPJs normalizados com a coleção `companyCnpjs`. Se aparecer um CNPJ existente sem reserva, ou houver divergência, interrompa a ativação e prepare uma atualização administrativa idempotente apenas para essa reserva. Preserve os documentos operacionais.
+
+## Prévia, endereço oficial e retorno
+
+1. Publique apenas o artefato estático no canal de prévia:
+   `npx firebase hosting:channel:deploy spark-review --expires 7d --no-authorized-domains --project textilflow-gui130699`.
+   O canal compartilha o Auth e o Firestore de produção, inclusive suas regras. Uma prévia do Hosting não isola dados nem regras.
+2. Enquanto não houver contas verificadas autorizadas e empresa de homologação identificada, verifique as rotas públicas e mantenha as regras em vigor. Não oriente usuários a gravar pelo canal.
+3. Com esses acessos e após a revisão das regras, use `npx firebase deploy --only firestore:rules --project textilflow-gui130699`. Não há diff de índices. Confira o domínio da prévia em Authentication → Settings → Authorized domains. Restrinja testes autenticados à empresa de homologação e não use dados ou arquivos reais.
+4. Na prévia, confirme login, gravação com saldo, persistência ao recarregar, relatório e leitura do proprietário. Após aprovação, gere o build sem emulador e publique com `npx firebase deploy --only hosting --project textilflow-gui130699`. Repita os testes em [textilflow-gui130699.web.app](https://textilflow-gui130699.web.app).
+5. Novos convites usam a origem em que foram gerados. Em produção, use apenas o endereço oficial; não emita convites reais na prévia. Convites antigos mantêm o endereço do Render e o token após `#`. Mantenha esse endereço por 48 h depois do último convite antigo ou reemita os convites pendentes no endereço oficial. Não registre tokens.
+6. Para voltar, mantenha o [Render](https://textilflow-piloto.onrender.com/login) disponível e teste primeiro o login e a API autenticada. No Console Firebase → Hosting → Histórico de versões, restaure a versão anterior do site. Se precisar suspender escritas do Spark, restaure somente as regras anteriores; isso não apaga dados. Convites emitidos no Spark exigem reemissão se voltar ao Render. Pause o Render somente após validar a URL oficial e encerrar os convites antigos.
+
+O plano deve permanecer Spark. Não execute um deploy geral que inclua App Hosting, Functions, Storage ou configuração de Auth.

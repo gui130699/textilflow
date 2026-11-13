@@ -14,9 +14,11 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command:
-      process.env.TEXTILFLOW_E2E_PRODUCTION === "true"
-        ? "npm start -- --hostname 127.0.0.1"
-        : "npm run dev -- --hostname 127.0.0.1",
+      process.env.NEXT_PUBLIC_API_MODE === "firestore"
+        ? "node scripts/serve-spark.mjs"
+        : process.env.TEXTILFLOW_E2E_PRODUCTION === "true"
+          ? "npm start -- --hostname 127.0.0.1"
+          : "npm run dev -- --hostname 127.0.0.1",
     url: "http://127.0.0.1:3000/login",
     reuseExistingServer: true,
     timeout: 120000,
