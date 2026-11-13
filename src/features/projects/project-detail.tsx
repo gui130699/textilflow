@@ -29,7 +29,7 @@ import { Feedback, Loading } from "@/components/feedback";
 import { OperationForm } from "@/features/production/operation-form";
 import { ProjectForm } from "./project-form";
 import { accountLabels, movementLabels } from "@/config/catalogs";
-import { call, serverApi } from "@/services/api";
+import { call, filesEnabled, sparkApi } from "@/services/api";
 import { useLabels } from "@/hooks/use-labels";
 export function ProjectDetail({
   id,
@@ -92,6 +92,18 @@ export function ProjectDetail({
     "all",
     sort,
     tab === "files" && !writable,
+  );
+  const lotHistory = useCollection(
+    sparkApi && path && tab === "history" ? `${path}/lotAssignments` : null,
+    "",
+    "all",
+    "createdAt",
+  );
+  const projectHistory = useCollection(
+    sparkApi && path && tab === "history" ? `${path}/projectChanges` : null,
+    "",
+    "all",
+    "createdAt",
   );
   async function editLot(lot: Row) {
     setBusy(true);
@@ -233,7 +245,26 @@ export function ProjectDetail({
     setInitial(data);
     setOperation(kind);
   }
-  const records = list.rows;
+  const records =
+    sparkApi && tab === "history"
+      ? [
+          ...list.rows,
+          ...lotHistory.rows.map<Row>((row) => ({
+            ...row,
+            action: "Responsável pelo lote",
+            data: { lote: row.lotId, inspetor: row.inspectorUid },
+          })),
+          ...projectHistory.rows.map<Row>((row) => ({
+            ...row,
+            action: "Cadastro do projeto",
+            data: { justificativa: row.reason || "—" },
+          })),
+        ].sort(
+          (a, b) =>
+            Number((b.createdAt as { seconds?: number })?.seconds ?? 0) -
+            Number((a.createdAt as { seconds?: number })?.seconds ?? 0),
+        )
+      : list.rows;
   return (
     <>
       <Link href="/projetos" className="back-link">
@@ -334,7 +365,7 @@ export function ProjectDetail({
           ["files", "Fotos e anexos"],
           ["history", "Histórico"],
         ]
-          .filter(([key]) => !serverApi || key !== "files")
+          .filter(([key]) => filesEnabled || key !== "files")
           .map(([key, label]) => (
             <button
               key={key}
@@ -717,8 +748,19 @@ export function ProjectDetail({
           )}
           <div className="panel-footer">
             <span>{records.length} registros carregados</span>
-            {list.more && (
-              <Button variant="outline" onClick={() => list.next()}>
+            {(list.more ||
+              (tab === "history" &&
+                (lotHistory.more || projectHistory.more))) && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (list.more) void list.next();
+                  if (tab === "history" && lotHistory.more)
+                    void lotHistory.next();
+                  if (tab === "history" && projectHistory.more)
+                    void projectHistory.next();
+                }}
+              >
                 Carregar mais
               </Button>
             )}

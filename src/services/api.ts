@@ -1,10 +1,16 @@
 import { httpsCallable } from "firebase/functions";
 import { auth, functions } from "@/lib/firebase";
-export const serverApi = process.env.NEXT_PUBLIC_API_MODE === "server";
+export const sparkApi = process.env.NEXT_PUBLIC_API_MODE === "firestore";
+const serverApi = process.env.NEXT_PUBLIC_API_MODE === "server";
+export const filesEnabled = !serverApi && !sparkApi;
 export async function call<T = unknown>(
   name: string,
   data: unknown = {},
 ): Promise<T> {
+  if (sparkApi) {
+    const { callFirestore } = await import("./spark/api");
+    return (await callFirestore(name, data)) as T;
+  }
   if (serverApi) {
     const user = auth.currentUser;
     if (!user) throw new Error("Entre na sua conta para continuar.");

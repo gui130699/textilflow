@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 const credentials = JSON.parse(
   readFileSync(".emulator-credentials.json", "utf8"),
 );
+const spark = process.env.NEXT_PUBLIC_API_MODE === "firestore";
+const itaboraiUrl = spark
+  ? "/projetos/detalhe?id=itaborai"
+  : "/projetos/itaborai";
 async function login(page: Page, owner = false) {
   await page.goto("/login");
   await page
@@ -28,27 +32,55 @@ test("protege rota sem sessão", async ({ page }) => {
 test("consulta CNPJ preenche a nova empresa e permite revisão", async ({
   page,
 }) => {
-  test.skip(process.env.NEXT_PUBLIC_API_MODE !== "server", "API do piloto");
+  test.skip(
+    process.env.NEXT_PUBLIC_API_MODE !== "server" && !spark,
+    "Consulta de CNPJ do piloto ou Spark",
+  );
   await login(page);
   await page.goto("/cadastros/companies");
   await page.getByRole("button", { name: "Cadastrar nova empresa" }).click();
-  await page.route("**/api/operations/lookupCompanyCnpj", async (route) => {
-    expect(route.request().postDataJSON()).toEqual({ taxId: "33000167000101" });
-    await route.fulfill({
-      json: {
-        result: {
-          source: "CNPJ.ws",
-          fields: {
-            taxId: "33000167000101",
-            name: "Empresa Exemplo",
-            legalName: "Empresa Exemplo Ltda.",
-            city: "Rio de Janeiro",
-            stateRegistration: "12345",
+  if (spark) {
+    await page.route("https://publica.cnpj.ws/cnpj/33000167000101", (route) =>
+      route.fulfill({
+        headers: { "Access-Control-Allow-Origin": "http://127.0.0.1:3000" },
+        json: {
+          razao_social: "Empresa Exemplo Ltda.",
+          estabelecimento: {
+            cnpj: "33000167000101",
+            nome_fantasia: "Empresa Exemplo",
+            cidade: { nome: "Rio de Janeiro" },
+            estado: { sigla: "RJ" },
+            inscricoes_estaduais: [
+              {
+                inscricao_estadual: "12345",
+                ativo: true,
+                estado: { sigla: "RJ" },
+              },
+            ],
           },
         },
-      },
+      }),
+    );
+  } else
+    await page.route("**/api/operations/lookupCompanyCnpj", async (route) => {
+      expect(route.request().postDataJSON()).toEqual({
+        taxId: "33000167000101",
+      });
+      await route.fulfill({
+        json: {
+          result: {
+            source: "CNPJ.ws",
+            fields: {
+              taxId: "33000167000101",
+              name: "Empresa Exemplo",
+              legalName: "Empresa Exemplo Ltda.",
+              city: "Rio de Janeiro",
+              stateRegistration: "12345",
+            },
+          },
+        },
+      });
     });
-  });
   await page.getByLabel("CNPJ", { exact: true }).fill("33.000.167/0001-01");
   await page.getByRole("button", { name: "Consultar CNPJ" }).click();
   await expect(page.getByLabel("Razão social")).toHaveValue(
@@ -149,12 +181,23 @@ test("novo projeto, modelagem e corte pelo formulário", async ({ page }) => {
   await expect(
     page.locator(".metric").filter({ hasText: "Corte acumulado" }),
   ).toContainText("100");
+  if (spark) {
+    const url = page.url();
+    expect(url).toContain("/projetos/detalhe?id=");
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: new RegExp(name) }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".metric").filter({ hasText: "Corte acumulado" }),
+    ).toContainText("100");
+  }
 });
 test("proprietário consulta e não vê operações de escrita", async ({
   page,
 }) => {
   await login(page, true);
-  await page.goto("/projetos/itaborai");
+  await page.goto(itaboraiUrl);
   await expect(
     page.getByRole("button", { name: "Editar projeto" }),
   ).toHaveCount(0);
@@ -222,6 +265,8 @@ for (const [kind, label] of [
       .fill(`Teste ${label} ${Date.now()}`);
     if (kind === "models")
       await page.locator("select#productId").selectOption("demo-0");
+    if (spark && kind === "companies")
+      await page.getByLabel("CNPJ", { exact: true }).fill("12.ABC.345/01DE-35");
     await page
       .getByRole("button", { name: "Salvar registro", exact: true })
       .click();
@@ -235,11 +280,11 @@ test("anexo real valida conteúdo, permite download e é visível ao proprietár
   page,
 }) => {
   test.skip(
-    process.env.NEXT_PUBLIC_API_MODE === "server",
+    process.env.NEXT_PUBLIC_API_MODE === "server" || spark,
     "Anexos indisponíveis no piloto",
   );
   await login(page);
-  await page.goto("/projetos/itaborai");
+  await page.goto(itaboraiUrl);
   await page.getByRole("tab", { name: "Fotos e anexos", exact: true }).click();
   page.on("dialog", (dialog) => dialog.accept());
   await page.locator("input[type=file]").setInputFiles({
@@ -265,7 +310,7 @@ test("anexo real valida conteúdo, permite download e é visível ao proprietár
     .getByRole("button", { name: "Sair da conta", exact: true })
     .click();
   await login(page, true);
-  await page.goto("/projetos/itaborai");
+  await page.goto(itaboraiUrl);
   await page.getByRole("tab", { name: "Fotos e anexos", exact: true }).click();
   await expect(
     page.getByRole("button", { name: new RegExp(filename) }),
@@ -275,7 +320,7 @@ test("imagem de modelo é enviada e carregada pelo Storage autenticado", async (
   page,
 }) => {
   test.skip(
-    process.env.NEXT_PUBLIC_API_MODE === "server",
+    process.env.NEXT_PUBLIC_API_MODE === "server" || spark,
     "Imagens indisponíveis no piloto",
   );
   await login(page);
@@ -309,4 +354,28 @@ test("API do piloto rejeita sessão ausente ou inválida e bloqueia a rota de an
     data: {},
   });
   expect(upload.status()).toBe(404);
+});
+
+test("Spark não consulta Render, Functions ou Storage", async ({ page }) => {
+  test.skip(!spark, "Exclusivo da saída estática");
+  const forbidden: string[] = [];
+  page.on("request", (req) => {
+    const url = new URL(req.url());
+    if (
+      url.pathname.startsWith("/api/operations") ||
+      url.port === "5001" ||
+      url.port === "9199" ||
+      /onrender\.com|cloudfunctions\.net|firebasestorage\.googleapis\.com/.test(
+        url.hostname,
+      )
+    )
+      forbidden.push(url.origin);
+  });
+  await login(page, true);
+  await page.goto(itaboraiUrl);
+  await expect(page.getByRole("heading", { name: /^Itaboraí/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Fotos e anexos" })).toHaveCount(
+    0,
+  );
+  expect(forbidden).toEqual([]);
 });

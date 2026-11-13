@@ -1,5 +1,7 @@
 # Implantação e operação
 
+O plano em andamento é [Firebase Hosting clássico no Spark](SPARK.md). A configuração de App Hosting abaixo fica como referência da alternativa que exigiria Blaze.
+
 ## Estado e autorização
 
 Projeto dedicado `textilflow-gui130699`. Firestore Standard em `southamerica-east1`, região confirmada pelo responsável. E-mail/senha habilitado no Authentication. O faturamento não foi ativado por esta implementação.

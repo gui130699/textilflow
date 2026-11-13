@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Feedback } from "@/components/feedback";
 import { DataTable } from "@/components/data-table";
 import { FormField } from "@/components/fields";
-import { call } from "@/services/api";
+import { call, sparkApi } from "@/services/api";
 import { errorMessage } from "@/lib/utils";
 export default function Users() {
   const { company, user } = useSession(),
@@ -151,14 +151,16 @@ export default function Users() {
                 key: "role",
                 label: "Perfil de acesso",
                 type: "select",
-                options: founder ? ["owner", "inspector"] : ["owner"],
+                options:
+                  founder && !sparkApi ? ["owner", "inspector"] : ["owner"],
               }}
               register={register}
             />
           </div>
           <p className="muted mt-3">
-            owner: proprietário, somente leitura. inspector: pode alterar
-            produção e gerenciar acessos.
+            {sparkApi
+              ? "O proprietário terá acesso somente para leitura. Inspetores solicitam acesso pelo CNPJ."
+              : "owner: proprietário, somente leitura. inspector: pode alterar produção e gerenciar acessos."}
           </p>
           <div className="form-actions">
             <Button disabled={isSubmitting}>

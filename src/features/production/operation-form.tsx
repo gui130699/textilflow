@@ -6,7 +6,7 @@ import { FormField } from "@/components/fields";
 import { Button } from "@/components/ui/button";
 import { Feedback } from "@/components/feedback";
 import { Field, movementLabels } from "@/config/catalogs";
-import { call } from "@/services/api";
+import { call, sparkApi } from "@/services/api";
 import { today, errorMessage } from "@/lib/utils";
 const receipt: Field[] = [
   {
@@ -329,6 +329,12 @@ export function OperationForm({
           </Button>
         </div>
         <form onSubmit={handleSubmit(save)}>
+          {sparkApi && operation === "receive" && (
+            <p className="muted">
+              Se o retorno cobrir vários envios, registre cada envio
+              separadamente, começando pelo mais antigo.
+            </p>
+          )}
           <div className="form-grid">
             <FormField
               field={{

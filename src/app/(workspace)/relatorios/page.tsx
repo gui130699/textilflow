@@ -167,7 +167,7 @@ export default function Reports() {
         <div className="flex gap-2">
           <Button variant="outline" disabled={!rows.length} onClick={exportCsv}>
             <Download size={16} />
-            Exportar CSV
+            Exportar CSV das páginas carregadas
           </Button>
           <Button
             variant="outline"

@@ -60,3 +60,7 @@ Para prosseguir, o responsável precisa [ativar o Blaze no projeto](https://cons
 - Alertas são internos. WhatsApp, e-mail automático e push ficam para versão futura, conforme o escopo solicitado.
 - Rules e validações iniciais passaram nos cenários automatizados descritos; revisão de segurança antes de adoção ampla, App Check e política operacional de backups permanecem necessários.
 - Autenticação e isolamento foram verificados localmente. Não declarar homologação online até existir deploy observado e testado.
+
+## Caminho Spark em homologação
+
+A versão estática usa o app Web existente, com Firebase Authentication e Firestore em São Paulo. Consulte [o guia Spark](SPARK.md) para os fluxos, limites e retorno. Em 13/11/2026, o site clássico já existia e as consultas de empresas e reservas de CNPJ estavam vazias. Não há empresa ou contas de homologação autorizadas em produção; o Render permanece disponível e não houve troca de endereço principal. As regras da versão Spark foram compiladas em simulação e verificadas no emulador; a homologação autenticada em produção continua pendente.

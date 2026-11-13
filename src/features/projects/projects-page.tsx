@@ -1,4 +1,5 @@
 "use client";
+import { projectUrl } from "@/lib/project-url";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Search, ArrowUpRight } from "lucide-react";
@@ -82,7 +83,14 @@ export function ProjectsPage({ mode = "projects" }: { mode?: string }) {
             rows={list.rows}
             onRow={(p) =>
               router.push(
-                `/projetos/${p.id}?tab=${mode === "inspections" ? "inspections" : mode === "production" || mode === "dispatch" ? "production" : "overview"}`,
+                projectUrl(
+                  p.id,
+                  mode === "inspections"
+                    ? "inspections"
+                    : mode === "production" || mode === "dispatch"
+                      ? "production"
+                      : "overview",
+                ),
               )
             }
             columns={[
@@ -160,7 +168,7 @@ export function ProjectsPage({ mode = "projects" }: { mode?: string }) {
         <ProjectForm
           companyId={company.id}
           onClose={() => setCreating(false)}
-          onSaved={(id) => router.push(`/projetos/${id}`)}
+          onSaved={(id) => router.push(projectUrl(id))}
         />
       )}
     </>

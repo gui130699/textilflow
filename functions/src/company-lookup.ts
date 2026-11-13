@@ -1,4 +1,3 @@
-import { HttpsError } from "firebase-functions/v2/https";
 import { z } from "zod";
 import { normalizeDocument, validCnpj } from "./cnpj";
 
@@ -75,9 +74,10 @@ async function fetchRegistry(url: string) {
     const response = await fetch(url, {
       headers: {
         Accept: "application/json",
-        "User-Agent": "TextilFlow-Cadastro",
       },
       signal: AbortSignal.timeout(4500),
+      credentials: "omit",
+      referrerPolicy: "no-referrer",
     });
     return {
       missing: response.status === 404,
@@ -88,10 +88,21 @@ async function fetchRegistry(url: string) {
   }
 }
 
+export class CompanyLookupError extends Error {
+  constructor(
+    readonly code: "invalid-argument" | "not-found" | "unavailable",
+    message: string,
+  ) {
+    super(message);
+  }
+}
 export async function lookupCompany(input: string) {
   const taxId = normalizeDocument(input);
   if (!validCnpj(taxId))
-    throw new HttpsError("invalid-argument", "Confira o CNPJ informado.");
+    throw new CompanyLookupError(
+      "invalid-argument",
+      "Confira o CNPJ informado.",
+    );
   const primary = await fetchRegistry(`https://publica.cnpj.ws/cnpj/${taxId}`);
   const result = cnpjWs.safeParse(primary.data);
   if (
@@ -139,11 +150,11 @@ export async function lookupCompany(input: string) {
     };
   }
   if (primary.missing || fallback.missing)
-    throw new HttpsError(
+    throw new CompanyLookupError(
       "not-found",
       "CNPJ não encontrado na consulta. Você pode preencher o cadastro manualmente.",
     );
-  throw new HttpsError(
+  throw new CompanyLookupError(
     "unavailable",
     "A consulta está indisponível. Tente novamente ou preencha o cadastro manualmente.",
   );
