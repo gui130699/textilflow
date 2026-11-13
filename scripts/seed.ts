@@ -47,20 +47,17 @@ async function seed() {
       .doc(`users/${uid}/companies/demo-company`)
       .set({ companyId: "demo-company" });
   }
-  await auth
-    .createUser({
-      uid: "inspector-company-demo",
-      email: "cadastro-empresa@textilflow.test",
-      password,
-      emailVerified: true,
-    })
-    .catch(async (error) => {
-      if (error.code !== "auth/uid-already-exists") throw error;
-      await auth.updateUser("inspector-company-demo", {
-        password,
-        emailVerified: true,
+  for (const [uid, email] of [
+    ["inspector-company-demo", "cadastro-empresa@textilflow.test"],
+    ["inspector-profile-demo", "perfil-pendente@textilflow.test"],
+  ]) {
+    await auth
+      .createUser({ uid, email, password, emailVerified: true })
+      .catch(async (error) => {
+        if (error.code !== "auth/uid-already-exists") throw error;
+        await auth.updateUser(uid, { password, emailVerified: true });
       });
-    });
+  }
   await db.doc("users/inspector-company-demo").set({
     name: "Inspetor sem empresa",
     inspectorRegistered: true,
@@ -236,6 +233,7 @@ async function seed() {
       email: "inspetor@textilflow.test",
       ownerEmail: "proprietario@textilflow.test",
       companyInspectorEmail: "cadastro-empresa@textilflow.test",
+      pendingInspectorEmail: "perfil-pendente@textilflow.test",
       password,
     }),
   );

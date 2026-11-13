@@ -49,7 +49,11 @@ export default function InspectorSignup() {
       await user.getIdToken(true);
       await call("registerInspector", { name });
       await session.refresh();
-      router.push("/empresas");
+      router.push(
+        new URLSearchParams(window.location.search).get("empresa") === "1"
+          ? "/cadastros/companies?novo=1"
+          : "/empresas",
+      );
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -77,9 +81,9 @@ export default function InspectorSignup() {
       <section className="panel">
         <h1>Cadastro de inspetor</h1>
         <p>
-          Confirme seu e-mail e informe o CNPJ da empresa no próximo passo. Se
-          ela já estiver cadastrada, o primeiro inspetor receberá seu pedido de
-          acesso no app.
+          {session.user?.emailVerified
+            ? "Seu e-mail já está confirmado. Informe seu nome e conclua o cadastro para cadastrar uma empresa ou solicitar acesso pelo CNPJ."
+            : "Confirme seu e-mail e conclua o perfil para cadastrar uma empresa ou solicitar acesso pelo CNPJ."}
         </p>
         <Feedback error={error} success={success} />
         <form onSubmit={submit}>

@@ -62,10 +62,11 @@ export default function Companies() {
           <Building2 />
           <h2>Nenhuma empresa vinculada</h2>
           <p>
-            Aceite o convite enviado pelo inspetor para acessar a sua empresa.
+            Para cadastrar uma empresa, conclua seu perfil de inspetor. Se
+            recebeu um convite, use o link enviado para acessar a empresa.
           </p>
-          <Button variant="outline" asChild>
-            <Link href="/cadastro-inspetor">Cadastrar perfil de inspetor</Link>
+          <Button asChild>
+            <Link href="/cadastro-inspetor?empresa=1">Cadastrar empresa</Link>
           </Button>
         </div>
       )}

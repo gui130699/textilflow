@@ -165,7 +165,9 @@ export default function Workspace({ children }: { children: React.ReactNode }) {
             <span className="role-pill">
               {s.company?.role === "owner"
                 ? "Proprietário · leitura"
-                : "Inspetor"}
+                : s.company?.role === "inspector" || s.canCreate
+                  ? "Inspetor"
+                  : "Sem empresa selecionada"}
             </span>
             <span className="user-avatar">
               {(s.user.displayName || s.user.email || "U")

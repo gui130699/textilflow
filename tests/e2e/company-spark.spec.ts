@@ -34,6 +34,22 @@ test.describe("Cadastro de empresa no Spark", () => {
     "Exclusivo do Spark",
   );
 
+  test("conta verificada sem perfil acessa o CNPJ após concluir o cadastro", async ({
+    page,
+  }) => {
+    await signIn(page, credentials.pendingInspectorEmail);
+    await expect(
+      page.getByText("Sem empresa selecionada", { exact: true }),
+    ).toBeVisible();
+    await page.getByRole("link", { name: "Cadastrar empresa" }).click();
+    await expect(page.getByText(/Seu e-mail já está confirmado/)).toBeVisible();
+    await page.getByLabel("Nome completo").fill("Inspetor de teste");
+    await page.getByRole("button", { name: "Concluir cadastro" }).click();
+    await expect(
+      page.getByRole("dialog").getByLabel("CNPJ", { exact: true }),
+    ).toBeVisible();
+  });
+
   test("inspetor sem vínculo consulta, troca o CNPJ e salva manualmente", async ({
     page,
   }) => {
