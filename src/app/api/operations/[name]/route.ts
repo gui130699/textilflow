@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 const allowed = [
   "companiesForUser",
   "saveCompany",
+  "lookupCompanyCnpj",
   "registerInspector",
   "listInspectorRequests",
   "decideInspectorRequest",
@@ -21,6 +22,7 @@ const allowed = [
   "reportPage",
 ] as const;
 const statuses: Record<string, number> = {
+  unavailable: 503,
   "invalid-argument": 400,
   unauthenticated: 401,
   "permission-denied": 403,
@@ -104,7 +106,7 @@ export async function POST(
     const status = Object.hasOwn(statuses, code) ? statuses[code] : 500;
     return failure(
       status,
-      status < 500 && error instanceof Error
+      (status < 500 || code === "unavailable") && error instanceof Error
         ? error.message
         : "Não foi possível concluir. Tente novamente.",
     );

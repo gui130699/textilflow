@@ -6,6 +6,8 @@ Na tela de login, abra **Criar conta → Cadastrar como inspetor** e confirme se
 
 Cada lote operacional novo recebe como responsável o inspetor que registra o primeiro corte. Em **Projetos → Visão geral → Lotes operacionais**, um inspetor pode transferir a responsabilidade para outro inspetor ativo da mesma empresa. Lotes antigos sem responsável aparecem como **A definir** até que sejam atribuídos.
 
+Em **Cadastros → Empresas → Cadastrar nova empresa**, informe o CNPJ e clique em **Consultar CNPJ**. O formulário usa a consulta pública da CNPJ.ws e, se necessário, a Minha Receita. Revise os dados preenchidos e complete os campos em branco, como WhatsApp e responsável. Se a consulta falhar, você pode preencher os dados manualmente.
+
 ## Primeiro acesso
 
 O operador provisiona o primeiro inspetor usando `scripts/bootstrap-admin.ts`. Na tela de login, use **Esqueci minha senha** para definir a senha da conta. O script não imprime nem armazena senhas.

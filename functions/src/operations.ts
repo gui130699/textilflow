@@ -23,6 +23,8 @@ import {
   DomainError,
 } from "./domain";
 import { authorize, audit, move, reconcile } from "./production";
+import { validCnpj } from "./cnpj";
+import { lookupCompany } from "./company-lookup";
 if (getApps().length === 0) initializeApp();
 const db = getFirestore();
 export function verifyOperationToken(token: string) {
@@ -65,6 +67,18 @@ const context = z.object({ companyId: id, projectId: id });
 const registeredInspector = (r: OperationRequest, profile: boolean) =>
   r.auth?.token.inspector === true ||
   (r.auth?.token.email_verified === true && profile);
+
+export const lookupCompanyCnpj = operation(async (r) => {
+  const user = uid(r);
+  const { taxId } = z.object({ taxId: z.string().max(32) }).parse(r.data);
+  const profile = await db.doc(`users/${user}`).get();
+  if (!registeredInspector(r, profile.get("inspectorRegistered") === true))
+    throw new HttpsError(
+      "permission-denied",
+      "Conclua seu cadastro de inspetor para consultar o CNPJ.",
+    );
+  return lookupCompany(taxId);
+});
 
 export const registerInspector = operation(async (r) => {
   const user = uid(r);
@@ -144,9 +158,11 @@ export const saveCompany = operation(async (r) => {
     )
       throw new HttpsError(
         "invalid-argument",
-        "Informe o CNPJ da empresa com 14 dígitos.",
+        "Informe o CNPJ completo da empresa.",
       );
     if (taxId.length === 14) {
+      if (existing.get("taxId") !== taxId && !validCnpj(taxId))
+        throw new HttpsError("invalid-argument", "Confira o CNPJ informado.");
       const registry = db.doc(`companyCnpjs/${taxId}`);
       const [indexed, legacy] = await Promise.all([
         tx.get(registry),

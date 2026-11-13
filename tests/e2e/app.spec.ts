@@ -25,6 +25,41 @@ test("protege rota sem sessão", async ({ page }) => {
     page.getByRole("heading", { name: "Sua produção começa aqui." }),
   ).toBeVisible();
 });
+test("consulta CNPJ preenche a nova empresa e permite revisão", async ({
+  page,
+}) => {
+  test.skip(process.env.NEXT_PUBLIC_API_MODE !== "server", "API do piloto");
+  await login(page);
+  await page.goto("/cadastros/companies");
+  await page.getByRole("button", { name: "Cadastrar nova empresa" }).click();
+  await page.route("**/api/operations/lookupCompanyCnpj", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ taxId: "33000167000101" });
+    await route.fulfill({
+      json: {
+        result: {
+          source: "CNPJ.ws",
+          fields: {
+            taxId: "33000167000101",
+            name: "Empresa Exemplo",
+            legalName: "Empresa Exemplo Ltda.",
+            city: "Rio de Janeiro",
+            stateRegistration: "12345",
+          },
+        },
+      },
+    });
+  });
+  await page.getByLabel("CNPJ", { exact: true }).fill("33.000.167/0001-01");
+  await page.getByRole("button", { name: "Consultar CNPJ" }).click();
+  await expect(page.getByLabel("Razão social")).toHaveValue(
+    "Empresa Exemplo Ltda.",
+  );
+  await expect(page.getByLabel("Cidade")).toHaveValue("Rio de Janeiro");
+  await expect(page.getByLabel("Inscrição estadual")).toHaveValue("12345");
+  await expect(page.getByLabel("WhatsApp")).toHaveValue("");
+  await page.getByLabel("WhatsApp").fill("21999999999");
+  await expect(page.getByLabel("WhatsApp")).toHaveValue("21999999999");
+});
 test("login inválido mostra mensagem útil", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("E-mail", { exact: true }).fill(credentials.email);
@@ -174,7 +209,13 @@ for (const [kind, label] of [
     await login(page);
     await page.goto(`/cadastros/${kind}`);
     await page
-      .getByRole("button", { name: `Adicionar ${label}`, exact: true })
+      .getByRole("button", {
+        name:
+          kind === "companies"
+            ? "Cadastrar nova empresa"
+            : `Adicionar ${label}`,
+        exact: true,
+      })
       .click();
     await page
       .getByLabel("Nome / descrição")

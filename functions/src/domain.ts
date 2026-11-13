@@ -51,7 +51,7 @@ export const catalogSchema = z
     legalName: optional,
     taxId: z
       .string()
-      .regex(/^(|\d{11}|\d{14})$/, "Use 11 ou 14 dígitos")
+      .regex(/^(?:|\d{11}|[A-Z0-9]{12}\d{2})$/, "Informe um CPF ou CNPJ válido")
       .optional()
       .default(""),
     personType: z.enum(["Física", "Jurídica"]).optional().default("Jurídica"),

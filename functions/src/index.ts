@@ -11,6 +11,7 @@ setGlobalOptions({
 
 export const companiesForUser = onCall(operations.companiesForUser);
 export const saveCompany = onCall(operations.saveCompany);
+export const lookupCompanyCnpj = onCall(operations.lookupCompanyCnpj);
 export const registerInspector = onCall(operations.registerInspector);
 export const listInspectorRequests = onCall(operations.listInspectorRequests);
 export const decideInspectorRequest = onCall(operations.decideInspectorRequest);

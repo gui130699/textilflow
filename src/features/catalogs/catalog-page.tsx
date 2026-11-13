@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { useForm, FieldValues } from "react-hook-form";
 import { Plus, Search, X, Building2 } from "lucide-react";
 import { catalogs } from "@/config/catalogs";
@@ -12,6 +13,7 @@ import { FormField } from "@/components/fields";
 import { call, serverApi } from "@/services/api";
 import { Row } from "@/types";
 import { catalogSchema } from "../../../functions/src/domain";
+import { normalizeDocument } from "../../../functions/src/cnpj";
 import { errorMessage, formatDate } from "@/lib/utils";
 import { CatalogImage } from "@/components/catalog-image";
 export function CatalogPage({ kind }: { kind: string }) {
@@ -22,7 +24,9 @@ export function CatalogPage({ kind }: { kind: string }) {
     [active, setActive] = useState("all"),
     [editing, setEditing] = useState<Row | null>(null),
     [error, setError] = useState(""),
-    [success, setSuccess] = useState("");
+    [success, setSuccess] = useState(""),
+    [lookupBusy, setLookupBusy] = useState(false),
+    [lookupSuccess, setLookupSuccess] = useState("");
   const list = useCollection(
     company && kind !== "companies" ? `companies/${company.id}/${kind}` : null,
     search,
@@ -33,13 +37,22 @@ export function CatalogPage({ kind }: { kind: string }) {
     handleSubmit,
     reset,
     setValue,
+    getValues,
     formState: { isSubmitting },
   } = useForm<FieldValues>();
   if (!config) return <Feedback error="Cadastro não encontrado." />;
+  const companies = kind === "companies";
+  const isNew = editing !== null && !editing.name;
+  const canAdd = companies ? session.canCreate : company?.role === "inspector";
   const writable =
-    kind === "companies"
-      ? session.canCreate || company?.role === "inspector"
-      : company?.role === "inspector";
+    companies && !isNew
+      ? session.companies.some(
+          (row) => row.id === editing?.id && row.role === "inspector",
+        )
+      : canAdd;
+  const companyFields = config.fields.filter(
+    (field) => !companies || field.key !== "taxId",
+  );
   const rows =
     kind === "companies"
       ? session.companies.filter(
@@ -51,6 +64,7 @@ export function CatalogPage({ kind }: { kind: string }) {
   function edit(row: Row) {
     setEditing(row);
     setError("");
+    setLookupSuccess("");
     reset({
       ...catalogSchema.parse({ name: "Novo registro" }),
       name: "",
@@ -58,6 +72,49 @@ export function CatalogPage({ kind }: { kind: string }) {
       ...row,
       services: Array.isArray(row.services) ? row.services.join(", ") : "",
     });
+  }
+  async function fillCompany() {
+    setLookupBusy(true);
+    setError("");
+    setLookupSuccess("");
+    try {
+      const taxId = normalizeDocument(String(getValues("taxId") ?? ""));
+      const result = await call<{
+        source: string;
+        fields: Record<string, string | null>;
+      }>("lookupCompanyCnpj", { taxId });
+      for (const key of [
+        "taxId",
+        "name",
+        "legalName",
+        "tradeName",
+        "personType",
+        "address",
+        "number",
+        "complement",
+        "neighborhood",
+        "city",
+        "state",
+        "zip",
+        "phone",
+        "email",
+        "stateRegistration",
+      ]) {
+        const value = result.fields[key];
+        if (value?.trim())
+          setValue(key, value.trim(), {
+            shouldDirty: true,
+            shouldValidate: true,
+          });
+      }
+      setLookupSuccess(
+        `Dados preenchidos via ${result.source}. Revise antes de salvar e complete os campos em branco.`,
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLookupBusy(false);
+    }
   }
   async function save(values: FieldValues) {
     try {
@@ -70,7 +127,7 @@ export function CatalogPage({ kind }: { kind: string }) {
         .map((s) => s.trim())
         .filter(Boolean);
       if (kind === "companies")
-        allowed.taxId = String(values.taxId ?? "").replace(/[.\-/\s]/g, "");
+        allowed.taxId = normalizeDocument(String(values.taxId ?? ""));
       const data = catalogSchema.parse(allowed);
       const result = await call<{ status?: string }>(
         kind === "companies" ? "saveCompany" : "saveCatalog",
@@ -102,10 +159,22 @@ export function CatalogPage({ kind }: { kind: string }) {
           <h1>{config.label}</h1>
           <p>{config.description}</p>
         </div>
-        {writable && (
+        {canAdd && (
           <Button onClick={() => edit({ id: crypto.randomUUID() })}>
             <Plus size={17} />
-            Adicionar {config.singular}
+            {companies
+              ? "Cadastrar nova empresa"
+              : `Adicionar ${config.singular}`}
+          </Button>
+        )}
+        {companies && !canAdd && !session.loading && !session.error && (
+          <Button asChild variant="outline">
+            <Link href="/cadastro-inspetor">Cadastrar perfil de inspetor</Link>
+          </Button>
+        )}
+        {companies && session.error && (
+          <Button variant="outline" onClick={() => void session.refresh()}>
+            Tentar carregar empresas novamente
           </Button>
         )}
       </div>
@@ -194,21 +263,48 @@ export function CatalogPage({ kind }: { kind: string }) {
                 <h2 id="catalog-title">
                   {editing.name
                     ? String(editing.name)
-                    : `Adicionar ${config.singular}`}
+                    : companies
+                      ? "Cadastrar nova empresa"
+                      : `Adicionar ${config.singular}`}
                 </h2>
               </div>
               <Button
                 variant="ghost"
                 size="icon"
                 aria-label="Fechar formulário"
+                disabled={lookupBusy}
                 onClick={() => setEditing(null)}
               >
                 <X />
               </Button>
             </div>
             <form onSubmit={handleSubmit(save)}>
-              <fieldset disabled={!writable || isSubmitting}>
+              <fieldset disabled={!writable || isSubmitting || lookupBusy}>
                 <div className="form-grid">
+                  {companies && (
+                    <div className="wide flex flex-wrap items-end gap-3">
+                      <div className="field min-w-48 flex-1">
+                        <label htmlFor="taxId">CNPJ</label>
+                        <input
+                          id="taxId"
+                          placeholder="00.000.000/0000-00"
+                          maxLength={22}
+                          readOnly={Boolean(editing.taxId)}
+                          {...register("taxId")}
+                        />
+                      </div>
+                      {isNew && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={fillCompany}
+                        >
+                          <Search size={16} />
+                          {lookupBusy ? "Consultando…" : "Consultar CNPJ"}
+                        </Button>
+                      )}
+                    </div>
+                  )}
                   <FormField
                     field={{
                       key: "name",
@@ -217,7 +313,7 @@ export function CatalogPage({ kind }: { kind: string }) {
                     }}
                     register={register}
                   />
-                  {config.fields.map((field) => (
+                  {companyFields.map((field) => (
                     <FormField
                       key={field.key}
                       field={field}
@@ -244,7 +340,7 @@ export function CatalogPage({ kind }: { kind: string }) {
                   />
                 </div>
               </fieldset>
-              <Feedback error={error} />
+              <Feedback error={error} success={lookupSuccess} />
               {!serverApi &&
                 Boolean(editing.name) &&
                 ["companies", "models"].includes(kind) && (
@@ -265,12 +361,13 @@ export function CatalogPage({ kind }: { kind: string }) {
                 <Button
                   type="button"
                   variant="outline"
+                  disabled={lookupBusy}
                   onClick={() => setEditing(null)}
                 >
                   Fechar
                 </Button>
                 {writable && (
-                  <Button disabled={isSubmitting}>
+                  <Button disabled={isSubmitting || lookupBusy}>
                     {isSubmitting ? "Salvando…" : "Salvar registro"}
                   </Button>
                 )}
