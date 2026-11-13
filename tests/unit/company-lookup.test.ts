@@ -68,3 +68,24 @@ it("usa a fonte alternativa quando a primeira limita consultas", async () => {
     city: "Rio de Janeiro",
   });
 });
+
+it("descarta respostas de outro CNPJ e distingue falha de ausência confirmada", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({
+        razao_social: "Outra empresa",
+        estabelecimento: { cnpj: "60701190000104" },
+      }),
+    )
+    .mockResolvedValueOnce(new Response("", { status: 404 }))
+    .mockResolvedValueOnce(new Response("", { status: 404 }))
+    .mockResolvedValueOnce(new Response("", { status: 404 }));
+  vi.stubGlobal("fetch", fetchMock);
+  await expect(lookupCompany("33000167000101")).rejects.toMatchObject({
+    code: "unavailable",
+  });
+  await expect(lookupCompany("33000167000101")).rejects.toMatchObject({
+    code: "not-found",
+  });
+});

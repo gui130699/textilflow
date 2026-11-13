@@ -123,9 +123,14 @@ export async function lookupCompany(input: string) {
         state: e.estado?.sigla,
         zip: e.cep,
         phone: e.telefone1 ? [e.ddd1, e.telefone1].join("") : "",
-        stateRegistration: e.inscricoes_estaduais?.find(
-          (ie) => ie.ativo && ie.estado?.sigla === e.estado?.sigla,
-        )?.inscricao_estadual,
+        stateRegistration: e.estado?.sigla
+          ? e.inscricoes_estaduais?.find(
+              (ie) =>
+                ie.ativo &&
+                ie.estado?.sigla === e.estado?.sigla &&
+                Boolean(ie.inscricao_estadual?.trim()),
+            )?.inscricao_estadual
+          : undefined,
       },
     };
   }
@@ -149,7 +154,7 @@ export async function lookupCompany(input: string) {
       },
     };
   }
-  if (primary.missing || fallback.missing)
+  if (primary.missing && fallback.missing)
     throw new CompanyLookupError(
       "not-found",
       "CNPJ não encontrado na consulta. Você pode preencher o cadastro manualmente.",

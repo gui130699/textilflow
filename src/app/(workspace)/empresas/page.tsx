@@ -49,7 +49,7 @@ export default function Companies() {
         {s.canCreate && (
           <button
             className="company-card add-company"
-            onClick={() => router.push("/cadastros/companies")}
+            onClick={() => router.push("/cadastros/companies?novo=1")}
           >
             <Plus />
             <h2>Cadastrar empresa</h2>

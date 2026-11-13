@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useForm, FieldValues } from "react-hook-form";
 import { Plus, Search, X, Building2 } from "lucide-react";
@@ -13,20 +13,55 @@ import { FormField } from "@/components/fields";
 import { call, filesEnabled, sparkApi } from "@/services/api";
 import { Row } from "@/types";
 import { catalogSchema } from "../../../functions/src/domain";
-import { normalizeDocument } from "../../../functions/src/cnpj";
+import { normalizeDocument, validCnpj } from "../../../functions/src/cnpj";
 import { errorMessage, formatDate } from "@/lib/utils";
 import { CatalogImage } from "@/components/catalog-image";
-export function CatalogPage({ kind }: { kind: string }) {
+const lookupFields = [
+  "name",
+  "legalName",
+  "tradeName",
+  "personType",
+  "address",
+  "number",
+  "complement",
+  "neighborhood",
+  "city",
+  "state",
+  "zip",
+  "phone",
+  "email",
+  "stateRegistration",
+] as const;
+const emptyCatalog = {
+  ...catalogSchema.parse({ name: "Novo registro" }),
+  name: "",
+  services: "",
+};
+
+export function CatalogPage({
+  kind,
+  openNew = false,
+}: {
+  kind: string;
+  openNew?: boolean;
+}) {
   const session = useSession(),
     config = catalogs[kind],
     company = session.company;
   const [search, setSearch] = useState(""),
     [active, setActive] = useState("all"),
-    [editing, setEditing] = useState<Row | null>(null),
+    [editing, setEditing] = useState<Row | null>(() =>
+      openNew ? { id: crypto.randomUUID() } : null,
+    ),
     [error, setError] = useState(""),
     [success, setSuccess] = useState(""),
     [lookupBusy, setLookupBusy] = useState(false),
     [lookupSuccess, setLookupSuccess] = useState("");
+  const lookupPending = useRef(false);
+  const autofill = useRef<{
+    taxId: string;
+    previous: Map<string, string>;
+  } | null>(null);
   const list = useCollection(
     company && kind !== "companies" ? `companies/${company.id}/${kind}` : null,
     search,
@@ -39,7 +74,8 @@ export function CatalogPage({ kind }: { kind: string }) {
     setValue,
     getValues,
     formState: { isSubmitting },
-  } = useForm<FieldValues>();
+  } = useForm<FieldValues>({ defaultValues: emptyCatalog });
+  const taxIdInput = register("taxId");
   if (!config) return <Feedback error="Cadastro não encontrado." />;
   const companies = kind === "companies";
   const isNew = editing !== null && !editing.name;
@@ -65,6 +101,7 @@ export function CatalogPage({ kind }: { kind: string }) {
     setEditing(row);
     setError("");
     setLookupSuccess("");
+    autofill.current = null;
     reset({
       ...catalogSchema.parse({ name: "Novo registro" }),
       name: "",
@@ -73,50 +110,63 @@ export function CatalogPage({ kind }: { kind: string }) {
       services: Array.isArray(row.services) ? row.services.join(", ") : "",
     });
   }
+  function changeCnpj(value: string) {
+    setError("");
+    if (
+      autofill.current &&
+      normalizeDocument(value) !== autofill.current.taxId
+    ) {
+      for (const [key, previous] of autofill.current.previous) {
+        setValue(key, previous, { shouldDirty: true, shouldValidate: true });
+      }
+      autofill.current = null;
+      setLookupSuccess("");
+    }
+  }
   async function fillCompany() {
+    if (lookupPending.current) return;
+    const taxId = normalizeDocument(String(getValues("taxId") ?? ""));
+    if (!validCnpj(taxId)) {
+      setError(
+        "Confira o CNPJ informado. Você pode continuar preenchendo o formulário.",
+      );
+      return;
+    }
+    lookupPending.current = true;
     setLookupBusy(true);
     setError("");
     setLookupSuccess("");
     try {
-      const taxId = normalizeDocument(String(getValues("taxId") ?? ""));
       const result = await call<{
         source: string;
         fields: Record<string, string | null>;
       }>("lookupCompanyCnpj", { taxId });
-      for (const key of [
-        "taxId",
-        "name",
-        "legalName",
-        "tradeName",
-        "personType",
-        "address",
-        "number",
-        "complement",
-        "neighborhood",
-        "city",
-        "state",
-        "zip",
-        "phone",
-        "email",
-        "stateRegistration",
-      ]) {
+      if (normalizeDocument(String(getValues("taxId") ?? "")) !== taxId) return;
+      const previous = autofill.current?.previous ?? new Map<string, string>();
+      for (const key of lookupFields) {
         const value = result.fields[key];
-        if (value?.trim())
+        if (value?.trim()) {
+          if (!previous.has(key))
+            previous.set(key, String(getValues(key) ?? ""));
           setValue(key, value.trim(), {
             shouldDirty: true,
             shouldValidate: true,
           });
+        }
       }
+      autofill.current = { taxId, previous };
       setLookupSuccess(
         `Dados preenchidos via ${result.source}. Revise antes de salvar e complete os campos em branco.`,
       );
     } catch (err) {
       setError(errorMessage(err));
     } finally {
+      lookupPending.current = false;
       setLookupBusy(false);
     }
   }
   async function save(values: FieldValues) {
+    if (lookupPending.current) return;
     try {
       setError("");
       const allowed = Object.fromEntries(
@@ -128,6 +178,8 @@ export function CatalogPage({ kind }: { kind: string }) {
         .filter(Boolean);
       if (kind === "companies")
         allowed.taxId = normalizeDocument(String(values.taxId ?? ""));
+      if (companies && sparkApi && !validCnpj(String(allowed.taxId ?? "")))
+        throw Error("Confira o CNPJ informado antes de salvar a empresa.");
       const data = catalogSchema.parse(allowed);
       const result = await call<{ status?: string }>(
         kind === "companies" ? "saveCompany" : "saveCatalog",
@@ -278,7 +330,7 @@ export function CatalogPage({ kind }: { kind: string }) {
                 <X />
               </Button>
             </div>
-            <form onSubmit={handleSubmit(save)}>
+            <form onSubmit={(event) => void handleSubmit(save)(event)}>
               <fieldset disabled={!writable || isSubmitting || lookupBusy}>
                 <div className="form-grid">
                   {companies && (
@@ -291,7 +343,11 @@ export function CatalogPage({ kind }: { kind: string }) {
                           maxLength={22}
                           required={sparkApi}
                           readOnly={Boolean(editing.taxId)}
-                          {...register("taxId")}
+                          {...taxIdInput}
+                          onChange={(event) => {
+                            void taxIdInput.onChange(event);
+                            changeCnpj(event.target.value);
+                          }}
                         />
                       </div>
                       {isNew && (
@@ -369,7 +425,11 @@ export function CatalogPage({ kind }: { kind: string }) {
                 </Button>
                 {writable && (
                   <Button disabled={isSubmitting || lookupBusy}>
-                    {isSubmitting ? "Salvando…" : "Salvar registro"}
+                    {isSubmitting
+                      ? "Salvando…"
+                      : companies
+                        ? "Salvar empresa"
+                        : "Salvar registro"}
                   </Button>
                 )}
               </div>

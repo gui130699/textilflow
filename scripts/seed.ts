@@ -47,6 +47,24 @@ async function seed() {
       .doc(`users/${uid}/companies/demo-company`)
       .set({ companyId: "demo-company" });
   }
+  await auth
+    .createUser({
+      uid: "inspector-company-demo",
+      email: "cadastro-empresa@textilflow.test",
+      password,
+      emailVerified: true,
+    })
+    .catch(async (error) => {
+      if (error.code !== "auth/uid-already-exists") throw error;
+      await auth.updateUser("inspector-company-demo", {
+        password,
+        emailVerified: true,
+      });
+    });
+  await db.doc("users/inspector-company-demo").set({
+    name: "Inspetor sem empresa",
+    inspectorRegistered: true,
+  });
   const stamp = {
     companyId: "demo-company",
     active: true,
@@ -217,6 +235,7 @@ async function seed() {
     JSON.stringify({
       email: "inspetor@textilflow.test",
       ownerEmail: "proprietario@textilflow.test",
+      companyInspectorEmail: "cadastro-empresa@textilflow.test",
       password,
     }),
   );

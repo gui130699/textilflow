@@ -268,7 +268,10 @@ for (const [kind, label] of [
     if (spark && kind === "companies")
       await page.getByLabel("CNPJ", { exact: true }).fill("12.ABC.345/01DE-35");
     await page
-      .getByRole("button", { name: "Salvar registro", exact: true })
+      .getByRole("button", {
+        name: kind === "companies" ? "Salvar empresa" : "Salvar registro",
+        exact: true,
+      })
       .click();
     await expect(page.getByRole("dialog")).toBeHidden();
     await expect(page.locator(".notice[role=status]")).toContainText(
