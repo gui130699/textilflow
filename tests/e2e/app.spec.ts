@@ -111,8 +111,22 @@ test("recuperação de senha", async ({ page }) => {
   );
 });
 test("dashboard, projeto e reconciliação", async ({ page }) => {
+  const aggregationSizes: number[] = [];
+  if (spark) {
+    // The emulator may accept requests that production rejects.
+    page.on("request", (request) => {
+      if (!request.url().includes(":runAggregationQuery")) return;
+      aggregationSizes.push(
+        request.postDataJSON().structuredAggregationQuery.aggregations.length,
+      );
+    });
+  }
   await login(page);
   await expect(page.getByText("3.000", { exact: true }).first()).toBeVisible();
+  if (spark) {
+    expect(aggregationSizes.length).toBeGreaterThan(0);
+    expect(Math.max(...aggregationSizes)).toBeLessThanOrEqual(5);
+  }
   await page.getByRole("button", { name: "Itaboraí", exact: true }).click();
   await expect(page.getByRole("heading", { name: /^Itaboraí/ })).toBeVisible();
   await page

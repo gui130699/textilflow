@@ -67,7 +67,7 @@ export async function reconcileProduction(raw: unknown) {
 }
 
 const open = statuses.slice(0, 6);
-const totals = [
+const totalFields = [
   "cut",
   "shipped",
   "printing",
@@ -86,7 +86,8 @@ export async function dashboard(raw: unknown) {
   );
   const stageKeys = ["cut", "printing", "sewing", "packing"];
   const [
-    stats,
+    projectCount,
+    totals,
     counts,
     stagesCount,
     lateCount,
@@ -98,15 +99,15 @@ export async function dashboard(raw: unknown) {
     completed,
     stale,
   ] = await Promise.all([
-    getAggregateFromServer(projects, {
-      total: count(),
-      cut: sum("cut"),
-      shipped: sum("shipped"),
-      printing: sum("printing"),
-      sewing: sum("sewing"),
-      packing: sum("packing"),
-      packed: sum("packed"),
-    }),
+    getAggregateFromServer(projects, { total: count() }),
+    // Use existing single-field indexes and include older projects that lack
+    // some of the other totals.
+    Promise.all(
+      totalFields.map(async (field) => {
+        const result = await getAggregateFromServer(projects, { n: sum(field) });
+        return [field, result.data().n ?? 0] as const;
+      }),
+    ),
     Promise.all(
       statuses.map(async (status) => ({
         status,
@@ -181,8 +182,8 @@ export async function dashboard(raw: unknown) {
   ]);
   return {
     summary: {
-      ...Object.fromEntries(totals.map((key) => [key, stats.data()[key] ?? 0])),
-      total: stats.data().total,
+      ...Object.fromEntries(totals),
+      total: projectCount.data().total,
       late: lateCount.data().n,
     },
     counts,
