@@ -18,3 +18,5 @@ env:
     value: 1:180669335706:web:47ce6ba5adc9bac7987723
   - variable: NEXT_PUBLIC_USE_EMULATORS
     value: "false"
+  - variable: NEXT_PUBLIC_API_MODE
+    value: callable

@@ -32,11 +32,24 @@ A [tela de login do piloto](https://textilflow-piloto.onrender.com/login) respon
 
 ## Pendências para publicação pelo App Hosting
 
-1. Autorização explícita do responsável e ativação do Blaze em conta de faturamento própria.
-2. Confirmação de `us-east4` para App Hosting, que não oferece região brasileira na documentação consultada.
-3. Provisionamento de Storage e Functions, integração GitHub/App Hosting, domínios Auth e CORS do bucket.
-4. Primeiro inspetor com identidade administrativa autorizada; e-mail a confirmar.
-5. Homologação online de login, escritas, relatórios, arquivos e isolamento entre empresas.
+Na inspeção de migração, a `main` e o Render executavam a base `7f16ca2d02994b6254c77ee43c12af1fcf0380ca`. O [Quality dessa base](https://github.com/gui130699/textilflow/actions/runs/43419315067) passou. A consulta GitHub indicou que a branch não tinha proteção nem rulesets. A migração não muda essa configuração.
+
+| Recurso        | Estado observado                                                                                                                                                                       |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Faturamento    | Spark. A API respondeu `billingEnabled: false` e não há conta vinculada para orçamento do projeto.                                                                                     |
+| Firestore      | Banco `(default)` em `southamerica-east1`, regras iguais às versionadas e 174 índices `READY`, sem índices faltantes ou extras.                                                        |
+| Authentication | E-mail/senha habilitado. Domínios `firebaseapp.com` e `web.app` do projeto e `textilflow-piloto.onrender.com` autorizados.                                                             |
+| App Web        | App existente `1:180669335706:web:47ce6ba5adc9bac7987723`. As variáveis públicas em `apphosting.yaml` correspondem ao SDK, com emuladores desabilitados.                               |
+| Storage        | Nenhum bucket retornado na listagem. O SDK indica o nome previsto `textilflow-gui130699.firebasestorage.app`. A existência e a região precisam ser verificadas após o provisionamento. |
+| Functions v2   | API desativada. O código define `southamerica-east1`, 3 instâncias por função, 256 MiB e 60 s.                                                                                         |
+| App Hosting    | API desativada e CLI bloqueada pelo Spark. `us-east4` é oferecida. Backend, rollout e URL ainda não confirmados.                                                                       |
+| Render         | Login público respondeu HTTP 200. Conexão autenticada e disponibilidade como retorno funcional ainda não verificadas.                                                                  |
+
+Next.js `16.4.6` permanece no lockfile. A documentação do App Hosting classifica versões superiores à faixa ativa como prévia. A validação real do adaptador depende do primeiro rollout. A preparação fixa `NEXT_PUBLIC_API_MODE=callable` no App Hosting e mantém `server` no Render.
+
+Na cópia isolada, passaram lint, typecheck, 25 testes unitários, build das Functions, 54 testes de integração no `demo-textilflow`, 19 testes de navegador e o build do Next.js. Os dois cenários exclusivos do modo Render foram pulados no modo callable. O build local também passou com as variáveis públicas de `apphosting.yaml`. Os emuladores usaram Node `22.23.5` e Java `21.0.13`. A instalação com Node 22 emite avisos `EBADENGINE` em dependências do SDK Web. Esses avisos e a faixa de suporte do adaptador devem ser conferidos nos logs do primeiro build remoto.
+
+Para prosseguir, o responsável precisa [ativar o Blaze no projeto](https://console.firebase.google.com/project/textilflow-gui130699/overview?purchaseBillingPlan=metered). Depois, conferir novamente os recursos, publicar Storage e Functions, conectar o GitHub e fazer o rollout pelo SHA validado. A homologação autenticada requer contas de teste autorizadas e uma empresa de homologação aprovada. O [runbook de implantação](DEPLOY.md) descreve o tratamento dos convites antigos e o retorno ao Render.
 
 ## Limites explícitos
 
