@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { useForm, FieldValues } from "react-hook-form";
+import { useForm, useWatch, FieldValues } from "react-hook-form";
 import { Plus, Search, X, Building2 } from "lucide-react";
 import { catalogs } from "@/config/catalogs";
 import { useSession } from "@/hooks/use-session";
@@ -82,6 +82,7 @@ export function CatalogPage({
     handleSubmit,
     reset,
     setValue,
+    control,
     getValues,
     formState: { isSubmitting },
   } = useForm<FieldValues>({
@@ -97,6 +98,7 @@ export function CatalogPage({
         : {}),
     },
   });
+  const form = useWatch({ control });
   const taxIdInput = register("taxId");
   if (!config) return <Feedback error="Cadastro não encontrado." />;
   const companies = kind === "companies";
@@ -412,11 +414,17 @@ export function CatalogPage({
                       field={field}
                       register={register}
                       companyId={company?.id}
-                      defaultValue={
-                        kind === "materials" && field.key === "supplierIds"
-                          ? (editing.supplierIds ??
-                            (editing.supplierId ? [editing.supplierId] : []))
-                          : editing[field.key]
+                      defaultValue={editing[field.key]}
+                      selection={
+                        field.type === "multi"
+                          ? {
+                              values: form[field.key] ?? [],
+                              onChange: (values) =>
+                                setValue(field.key, values, {
+                                  shouldDirty: true,
+                                }),
+                            }
+                          : undefined
                       }
                     />
                   ))}

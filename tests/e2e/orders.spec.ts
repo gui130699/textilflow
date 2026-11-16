@@ -38,11 +38,9 @@ test.describe("Empresa modelo", () => {
     await page
       .getByRole("button", { name: "Camiseta Básica", exact: true })
       .click();
-    await expect(page.getByLabel("Cores disponíveis")).toHaveValues([
-      "azul-marinho",
-      "branco",
-      "preto",
-    ]);
+    await expect(
+      page.getByLabel("Cores disponíveis", { exact: true }),
+    ).toHaveValues(["azul-marinho", "branco", "preto"]);
     await page.getByRole("link", { name: "Malha penteada 30/1" }).click();
     await expect(page.getByLabel("Fornecedores", { exact: true })).toHaveValues(
       ["alfa", "beta"],

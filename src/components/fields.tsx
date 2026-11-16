@@ -38,11 +38,13 @@ export function FormField({
   register,
   companyId,
   defaultValue,
+  selection,
 }: {
   field: Field;
   register: UseFormRegister<FieldValues>;
   companyId?: string;
   defaultValue?: unknown;
+  selection?: { values: string[]; onChange: (values: string[]) => void };
 }) {
   const [options, setOptions] = useState<{ id: string; name: string }[]>([]),
     [search, setSearch] = useState(""),
@@ -106,6 +108,7 @@ export function FormField({
     required: field.required,
     valueAsNumber: field.type === "number",
   });
+  const selectedValues = selection?.values ?? defaultValue;
   return (
     <div className={field.type === "textarea" ? "field wide" : "field"}>
       <label htmlFor={field.key}>
@@ -124,10 +127,27 @@ export function FormField({
       {field.type === "textarea" ? (
         <textarea id={field.key} rows={3} {...props} />
       ) : field.type === "select" || field.type === "multi" ? (
-        <select id={field.key} multiple={field.type === "multi"} {...props}>
+        <select
+          id={field.key}
+          multiple={field.type === "multi"}
+          {...props}
+          {...(selection && {
+            value: selection.values,
+            onChange: (event: React.ChangeEvent<HTMLSelectElement>) => {
+              const next = Array.from(
+                event.currentTarget.selectedOptions,
+                (option) => option.value,
+              );
+              selection.onChange([
+                ...selection.values.filter((value) => next.includes(value)),
+                ...next.filter((value) => !selection.values.includes(value)),
+              ]);
+            },
+          })}
+        >
           {field.type !== "multi" && <option value="">Selecione</option>}
-          {Array.isArray(defaultValue) &&
-            defaultValue
+          {Array.isArray(selectedValues) &&
+            selectedValues
               .filter((id) => !options.some((o) => o.id === id))
               .map((id) => (
                 <option key={id} value={id}>
