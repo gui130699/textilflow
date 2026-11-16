@@ -16,7 +16,7 @@ service cloud.firestore {
   function member(c){return signedIn() && companyExists(c) && get(/databases/$(database)/documents/companies/$(c)).data.active == true && exists(/databases/$(database)/documents/companies/$(c)/members/$(request.auth.uid)) && get(/databases/$(database)/documents/companies/$(c)/members/$(request.auth.uid)).data.active == true;}
   function inspector(c){return member(c) && get(/databases/$(database)/documents/companies/$(c)/members/$(request.auth.uid)).data.role == 'inspector';}
   function projectExists(c,p){return exists(/databases/$(database)/documents/companies/$(c)/projects/$(p));}
-  function catalog(k){return k in ['clients','thirdParties','suppliers','materials','products','models','colors','sizes','grades','units','rejectionReasons','inspectionTypes','modules','categories'];}
+  function catalog(k){return k in ['clients','thirdParties','suppliers','materials','products','models','colors','sizes','grades','units','rejectionReasons','inspectionTypes','modules','categories','sectors','flows'];}
   function event(k){return k in ['materialReceipts','inspections','modeling','productionMovements','productionBalances','activityLog','reversals'];}
 
   // Spark uses the existing company/member/link documents. A verified profile alone
@@ -91,6 +91,17 @@ service cloud.firestore {
    return chars[t[12]] == cnpjDigit(first) && chars[t[13]] == cnpjDigit(second) &&
      !(t in ['00000000000000','11111111111111','22222222222222','33333333333333','44444444444444','55555555555555','66666666666666','77777777777777','88888888888888','99999999999999']);
   }
+  function technicalFields(){return ['reference','colorIds','materialIds','supplierIds','sizeIds','sectorIds','modelId','gradeId'];}
+  function validTechnical(d){
+   return (!('reference' in d) || str(d.reference,120)) &&
+     (!('modelId' in d) || optionalKey(d.modelId)) &&
+     (!('gradeId' in d) || optionalKey(d.gradeId)) &&
+     (!('colorIds' in d) || uniqueIds(d.colorIds,24)) &&
+     (!('materialIds' in d) || uniqueIds(d.materialIds,24)) &&
+     (!('supplierIds' in d) || uniqueIds(d.supplierIds,24)) &&
+     (!('sizeIds' in d) || uniqueIds(d.sizeIds,24)) &&
+     (!('sectorIds' in d) || uniqueIds(d.sectorIds,12));
+  }
   function catalogFields(){
    return ['name','tradeName','legalName','taxId','personType','stateRegistration','contact','phone','whatsapp','email','address','number','complement','neighborhood','city','state','zip','notes','category','type','composition','color','unit','supplierId','productId','services','averageDays','technicalNotes','image','order','operationalType','required','active','companyId','searchName','createdAt','createdBy','updatedAt','updatedBy'];
   }
@@ -103,7 +114,7 @@ service cloud.firestore {
      str(d.color,2000) && str(d.unit,2000) && str(d.technicalNotes,2000);
   }
   function validCatalog(c,d){
-   return d.companyId == c && label(d.name,160) && label(d.searchName,200) && d.active is bool &&
+   return d.companyId == c && str(d.name,160) && d.name.size() > 0 && str(d.searchName,200) && d.searchName.size() > 0 && d.active is bool &&
      d.personType in ['Física','Jurídica'] && str(d.taxId,14) &&
      d.taxId.matches('^(|[0-9]{11}|[A-Z0-9]{12}[0-9]{2})$') && catalogStrings(d) &&
      d.averageDays is int && d.averageDays >= 0 && d.averageDays <= 365 &&
@@ -115,11 +126,11 @@ service cloud.firestore {
      updated(d);
   }
   function createCatalog(c,d){
-   return exact(d,catalogFields()) && validCatalog(c,d) && created(d) && d.image == '';
+   return d.keys().hasAll(catalogFields()) && d.keys().hasOnly(catalogFields().concat(technicalFields())) && validTechnical(d) && validCatalog(c,d) && created(d) && d.image == '';
   }
   function editCatalog(c,d){
-   return d.diff(resource.data).affectedKeys().hasOnly(catalogFields().removeAll(['createdAt','createdBy'])) &&
-     validCatalog(c,d) && d.image == resource.data.get('image','');
+   return d.diff(resource.data).affectedKeys().hasOnly(catalogFields().concat(technicalFields()).removeAll(['createdAt','createdBy'])) &&
+     validCatalog(c,d) && validTechnical(d) && d.image == resource.data.get('image','');
   }
   function pendingRequest(c,u,d){
    return isOwner(u) && registered() && get(cp(c)).data.active == true &&
@@ -217,22 +228,157 @@ service cloud.firestore {
   }
   function changeReason(c,p,d){return getAfter(projectChangePath(c,p,d.sparkChangeId)).data.reason;}
   function createProject(c,p,d){
-   return exact(d,projectFields().concat(['companyId','createdAt','createdBy','cut','shipped','printing','sewing','packing','packed','active','balances','modelingStatus','reconciliationOk'])) &&
+   let required = projectFields().concat(['companyId','createdAt','createdBy','cut','shipped','printing','sewing','packing','packed','active','balances','modelingStatus','reconciliationOk']);
+   return exact(d, 'manufacturing' in d ? required.concat(['manufacturing']) : required) &&
      d.companyId == c && created(d) && validProject(c,d) && projectChange(c,p,d) &&
      d.active == true && d.cut == 0 && d.shipped == 0 && d.printing == 0 && d.sewing == 0 &&
      d.packing == 0 && d.packed == 0 && d.balances == {} &&
      d.modelingStatus == 'Aguardando liberação' && d.reconciliationOk == true &&
-     (!(d.status in ['Concluído','Cancelado']) || changeReason(c,p,d).size() >= 10);
+     ('manufacturing' in d ? d.status == 'Planejado' :
+       (!(d.status in ['Concluído','Cancelado']) || changeReason(c,p,d).size() >= 10));
   }
   function editProject(c,p,d){
    let old = resource.data;
-   return d.diff(old).affectedKeys().hasOnly(projectFields()) && validProject(c,d) && projectChange(c,p,d) &&
+   return (!('manufacturing' in old) || (d.planned == old.planned && d.clientId == old.clientId && d.productId == old.productId && d.modelId == old.modelId && d.stages == old.stages && d.status != 'Cancelado' && old.status != 'Cancelado')) && d.diff(old).affectedKeys().hasOnly(projectFields()) && validProject(c,d) && projectChange(c,p,d) &&
      d.planned >= old.cut && (d.planned == old.planned || changeReason(c,p,d).size() >= 5) &&
      (old.cut == 0 || (d.stages == old.stages && d.moduleIds == old.moduleIds)) &&
      (!(d.status in ['Concluído','Cancelado']) || changeReason(c,p,d).size() >= 10 ||
        (old.cut == old.balances.get('despachado',0) + old.balances.get('perdas',0) &&
         old.balances.get('despachado',0) >= d.planned));
   }
+
+  // Orders contain the customer and flow snapshot. Item vectors are indexed by
+  // color * sizeCount + size. An OF is an operational project with a reservation.
+  function orderPath(c,o){return /databases/$(database)/documents/companies/$(c)/orders/$(o);}
+  function itemPath(c,o,i){return /databases/$(database)/documents/companies/$(c)/orders/$(o)/items/$(i);}
+  function catalogPath(c,k,i){return /databases/$(database)/documents/companies/$(c)/$(k)/$(i);}
+  function uniqueIds(value,n){return idList(value,n) && value.size() == value.toSet().size();}
+  function flowSnapshot(c,d){
+   return d.flowId == '' ? d.sectorIds == [] :
+     (key(d.flowId) && activeCatalog(c,'flows',d.flowId) &&
+       d.sectorIds == get(catalogPath(c,'flows',d.flowId)).data.sectorIds);
+  }
+  function validOrder(c,d){
+   return exact(d,['number','clientId','dueOn','flowId','sectorIds','searchName','createdBy','createdAt','updatedBy','updatedAt']) &&
+     label(d.number,100) && str(d.searchName,100) && dateString(d.dueOn) &&
+     activeCatalog(c,'clients',d.clientId) && optionalKey(d.flowId) &&
+     uniqueIds(d.sectorIds,12) && updated(d);
+  }
+  function orderedShape(v){return v is list && v.size() == 24;}
+  function sumGrade(v){return v[0] + v[1] + v[2] + v[3] + v[4] + v[5] + v[6] + v[7] + v[8] + v[9] + v[10] + v[11];}
+  function zeroTail(v,n){
+   return n == 24 || (n >= 0 && n < 24 && v[n:24].hasOnly([0]));
+  }
+  function gradeCell(q,used){
+   return q is int && q >= used && q <= 10000000;
+  }
+  function fitsGrade(grade,used,slots){
+   return (slots <= 0 || gradeCell(grade[0],used[0])) &&
+     (slots <= 1 || gradeCell(grade[1],used[1])) &&
+     (slots <= 2 || gradeCell(grade[2],used[2])) &&
+     (slots <= 3 || gradeCell(grade[3],used[3])) &&
+     (slots <= 4 || gradeCell(grade[4],used[4])) &&
+     (slots <= 5 || gradeCell(grade[5],used[5])) &&
+     (slots <= 6 || gradeCell(grade[6],used[6])) &&
+     (slots <= 7 || gradeCell(grade[7],used[7])) &&
+     (slots <= 8 || gradeCell(grade[8],used[8])) &&
+     (slots <= 9 || gradeCell(grade[9],used[9])) &&
+     (slots <= 10 || gradeCell(grade[10],used[10])) &&
+     (slots <= 11 || gradeCell(grade[11],used[11]));
+  }
+  function validLeaves(v,n){
+   return orderedShape(v) && n <= 6 && zeroTail(v,n) &&
+     (v.hasOnly([0]) ||
+       (boundedInt(v[0],0,10000000) && boundedInt(v[1],0,10000000) &&
+        boundedInt(v[2],0,10000000) && boundedInt(v[3],0,10000000) &&
+        (n < 5 || boundedInt(v[4],0,10000000)) &&
+        (n < 6 || boundedInt(v[5],0,10000000))));
+  }
+  function validItem(c,d){
+   let product = get(catalogPath(c,'products',d.productId)).data;
+   let grade = get(catalogPath(c,'grades',d.gradeId)).data;
+   let slots = d.colors.size() * d.sizes.size();
+   return exact(d,['productId','gradeId','colors','sizes','ordered','leaves','allocated','lastOf','createdAt','createdBy','updatedAt','updatedBy']) &&
+     key(d.productId) && key(d.gradeId) && product.active == true && grade.active == true &&
+     uniqueIds(d.colors,6) && uniqueIds(d.sizes,24) &&
+     d.colors.hasOnly(product.get('colorIds',[])) && d.sizes == grade.get('sizeIds',[]) &&
+     slots > 0 && slots <= 12 && orderedShape(d.ordered) &&
+     zeroTail(d.ordered,slots) && fitsGrade(d.ordered,d.allocated,slots) && !d.ordered.hasOnly([0]) &&
+     validLeaves(d.leaves,d.colors.size()) && updated(d);
+  }
+  function editItem(c,d){
+   let before = resource.data;
+   return d.diff(before).affectedKeys().hasOnly(['productId','gradeId','colors','sizes','ordered','leaves','updatedAt','updatedBy']) &&
+     (before.lastOf == '' || d.diff(before).affectedKeys().hasOnly(['ordered','leaves','updatedAt','updatedBy'])) &&
+     validItem(c,d);
+  }
+  function reserveCell(before,next,demand,qty,sign){
+   return qty is int && qty >= 0 && next == before + sign * qty && next >= 0 && next <= demand;
+  }
+  function reserveVector(before,next,demand,qty,sign,slots){
+   return orderedShape(qty) && zeroTail(qty,slots) && zeroTail(next,slots) &&
+     (slots <= 0 || reserveCell(before[0],next[0],demand[0],qty[0],sign)) &&
+     (slots <= 1 || reserveCell(before[1],next[1],demand[1],qty[1],sign)) &&
+     (slots <= 2 || reserveCell(before[2],next[2],demand[2],qty[2],sign)) &&
+     (slots <= 3 || reserveCell(before[3],next[3],demand[3],qty[3],sign)) &&
+     (slots <= 4 || reserveCell(before[4],next[4],demand[4],qty[4],sign)) &&
+     (slots <= 5 || reserveCell(before[5],next[5],demand[5],qty[5],sign)) &&
+     (slots <= 6 || reserveCell(before[6],next[6],demand[6],qty[6],sign)) &&
+     (slots <= 7 || reserveCell(before[7],next[7],demand[7],qty[7],sign)) &&
+     (slots <= 8 || reserveCell(before[8],next[8],demand[8],qty[8],sign)) &&
+     (slots <= 9 || reserveCell(before[9],next[9],demand[9],qty[9],sign)) &&
+     (slots <= 10 || reserveCell(before[10],next[10],demand[10],qty[10],sign)) &&
+     (slots <= 11 || reserveCell(before[11],next[11],demand[11],qty[11],sign));
+  }
+  function updateReservation(c,o,i,d){
+   let before = resource.data;
+   let path = projectPath(c,d.lastOf);
+   let p = getAfter(path).data;
+   let m = p.manufacturing;
+   return key(d.lastOf) && d.diff(before).affectedKeys().hasOnly(['allocated','lastOf','updatedBy','updatedAt']) &&
+     updated(d) && orderedShape(d.allocated) && m.orderId == o && m.itemId == i && p.updatedAt == request.time &&
+     ((!exists(path) && p.status == 'Planejado' &&
+         reserveVector(before.allocated,d.allocated,before.ordered,m.quantities,1,before.colors.size() * before.sizes.size())) ||
+      (p.status == 'Cancelado' && get(path).data.status != 'Cancelado' &&
+         reserveVector(before.allocated,d.allocated,before.ordered,m.quantities,-1,before.colors.size() * before.sizes.size())));
+  }
+  function ofReservation(c,p,m){
+   let path = itemPath(c,m.orderId,m.itemId);
+   let after = getAfter(path).data;
+   return after.lastOf == p && after.updatedAt == request.time && after.allocated != get(path).data.allocated;
+  }
+  function validOfGrade(c,id,p){
+   let m = p.get('manufacturing',null);
+   return m == null || (orderedShape(m.quantities) &&
+     p.planned == sumGrade(m.quantities) && validLeaves(m.leaves,m.colors.size()) &&
+     (exists(projectPath(c,id)) || validOf(c,id,p)));
+  }
+  function validOf(c,p,d){
+   let m = d.manufacturing;
+   let order = get(orderPath(c,m.orderId)).data;
+   let item = get(itemPath(c,m.orderId,m.itemId)).data;
+   return exact(m,['orderId','itemId','orderNumber','quantities','leaves','colors','sizes','sectorIds']) &&
+     key(m.orderId) && key(m.itemId) && m.orderNumber == order.number &&
+     d.clientId == order.clientId && d.productId == item.productId &&
+     m.colors == item.colors && m.sizes == item.sizes && uniqueIds(m.sectorIds,12) &&
+     d.status == 'Planejado' && ofReservation(c,p,m);
+  }
+  function cancelManufacturing(c,p,d){
+   let old = resource.data;
+   return 'manufacturing' in old && old.status != 'Cancelado' && d.status == 'Cancelado' &&
+     !('sparkEventId' in old) && !('sparkMovementId' in old) && old.cut == 0 &&
+     d.diff(old).affectedKeys().hasOnly(['status','updatedBy','updatedAt']) && updated(d) &&
+     ofReservation(c,p,old.manufacturing);
+  }
+  function editManufacturing(d){
+   let old = resource.data;
+   return 'manufacturing' in old && old.status == 'Planejado' &&
+     !('sparkEventId' in old) && !('sparkMovementId' in old) &&
+     d.diff(old).affectedKeys().hasOnly(['manufacturing','updatedBy','updatedAt']) &&
+     d.manufacturing.diff(old.manufacturing).affectedKeys().hasOnly(['sectorIds']) &&
+     uniqueIds(d.manufacturing.sectorIds,12) && updated(d);
+  }
+
   function eventPath(c,p,k,i){return /databases/$(database)/documents/companies/$(c)/projects/$(p)/$(k)/$(i);}
   function running(p){return !(p.status in ['Concluído','Cancelado','Suspenso']);}
   function eventProjectUpdate(c,p,d){
@@ -517,12 +663,29 @@ service cloud.firestore {
     allow update: if catalog(kind) && writer(c) && editCatalog(c,request.resource.data);
    }
    match /activityLog/{logId} {allow read: if inspector(c);}
+   match /orders/{o} {
+    allow read: if member(c);
+    allow create: if key(o) && writer(c) && validOrder(c,request.resource.data) &&
+      created(request.resource.data) && flowSnapshot(c,request.resource.data);
+    allow update: if writer(c) && validOrder(c,request.resource.data) &&
+      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['number','dueOn','flowId','sectorIds','searchName','updatedAt','updatedBy']) &&
+      ((request.resource.data.flowId == resource.data.flowId && request.resource.data.sectorIds == resource.data.sectorIds) ||
+        flowSnapshot(c,request.resource.data));
+    match /items/{i} {
+     allow read: if member(c);
+     allow create: if key(i) && writer(c) && existsAfter(orderPath(c,o)) && validItem(c,request.resource.data) &&
+       created(request.resource.data) && orderedShape(request.resource.data.allocated) &&
+       request.resource.data.allocated.hasOnly([0]) && request.resource.data.lastOf == '';
+     allow update: if writer(c) && (request.resource.data.allocated != resource.data.allocated ?
+       updateReservation(c,o,i,request.resource.data) : editItem(c,request.resource.data));
+    }
+   }
    match /projects/{p} {
     allow read: if member(c);
     match /{kind}/{recordId} {allow read: if event(kind) && member(c) && projectExists(c,p);}
     allow create: if key(p) && writer(c) && createProject(c,p,request.resource.data);
     allow update: if writer(c) &&
-     (request.resource.data.get('sparkMovementId','') != resource.data.get('sparkMovementId','') ?
+     (request.resource.data.get('manufacturing',{}) != resource.data.get('manufacturing',{}) ? editManufacturing(request.resource.data) : request.resource.data.status == 'Cancelado' && 'manufacturing' in resource.data ? cancelManufacturing(c,p,request.resource.data) : request.resource.data.get('sparkMovementId','') != resource.data.get('sparkMovementId','') ?
        moveProject(c,p,request.resource.data) :
       request.resource.data.get('sparkChangeId','') != resource.data.get('sparkChangeId','') ?
        editProject(c,p,request.resource.data) : eventProjectUpdate(c,p,request.resource.data));
@@ -531,7 +694,8 @@ service cloud.firestore {
      allow create: if key(i) && writer(c) && exact(request.resource.data,['reason','createdAt','createdBy']) &&
        str(request.resource.data.reason,2000) && created(request.resource.data) &&
        getAfter(projectPath(c,p)).data.sparkChangeId == i &&
-       getAfter(projectPath(c,p)).data.updatedAt == request.time;
+       getAfter(projectPath(c,p)).data.updatedAt == request.time &&
+       validOfGrade(c,p,getAfter(projectPath(c,p)).data);
     }
     match /{k}/{i} {
      allow create: if k in ['materialReceipts','inspections','modeling'] &&

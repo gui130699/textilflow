@@ -219,6 +219,28 @@ export async function callFirestore(name: string, raw: unknown) {
       const ref = doc(company(companyId), kind, id);
       await runTransaction(db, async (tx) => {
         const before = await tx.get(ref);
+        const linked = [
+          ...((data.supplierIds ?? []).map((id) => ["suppliers", id])),
+          ...((data.colorIds ?? []).map((id) => ["colors", id])),
+          ...((data.materialIds ?? []).map((id) => ["materials", id])),
+          ...((data.sizeIds ?? []).map((id) => ["sizes", id])),
+          ...((data.sectorIds ?? []).map((id) => ["sectors", id])),
+          ...(data.modelId ? [["models", data.modelId]] : []),
+          ...(data.gradeId ? [["grades", data.gradeId]] : []),
+        ];
+        const references = await Promise.all(linked.map(([kind,id]) =>
+          tx.get(doc(company(companyId),kind,id)),
+        ));
+        if (references.some((row) => row.get("active") !== true))
+          throw Error("Selecione registros ativos da mesma empresa.");
+        if (data.modelId && references.find((row) => row.ref.parent.id === "models")?.get("productId") !== id)
+          throw Error("A modelagem precisa pertencer a este produto.");
+        const primarySupplier = before.get("supplierId");
+        if (data.supplierIds) {
+          if (primarySupplier && data.supplierIds.includes(primarySupplier))
+            data.supplierIds = [primarySupplier, ...data.supplierIds.filter((id) => id !== primarySupplier)];
+          data.supplierId = data.supplierIds[0] ?? "";
+        }
         tx.set(
           ref,
           {

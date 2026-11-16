@@ -41,12 +41,14 @@ export const catalogKinds = [
   "rejectionReasons",
   "inspectionTypes",
   "modules",
+  "sectors",
+  "flows",
   "categories",
 ] as const;
 const optional = text.optional().default("");
 export const catalogSchema = z
   .object({
-    name,
+    name: z.string().trim().min(1).max(160),
     tradeName: optional,
     legalName: optional,
     taxId: z
@@ -74,6 +76,14 @@ export const catalogSchema = z
     category: optional,
     type: optional,
     composition: optional,
+    reference: z.string().trim().max(120).optional(),
+    colorIds: z.array(id).max(24).optional(),
+    materialIds: z.array(id).max(24).optional(),
+    supplierIds: z.array(id).max(24).optional(),
+    sizeIds: z.array(id).max(24).optional(),
+    sectorIds: z.array(id).max(12).optional(),
+    modelId: id.or(z.literal("")).optional(),
+    gradeId: id.or(z.literal("")).optional(),
     color: optional,
     unit: optional,
     supplierId: z

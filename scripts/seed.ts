@@ -3,6 +3,7 @@ import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
+import { demoEmails, seedManufacturing } from "./manufacturing-demo";
 if (
   process.env.GCLOUD_PROJECT &&
   process.env.GCLOUD_PROJECT !== "demo-textilflow"
@@ -227,6 +228,7 @@ async function seed() {
         updatedAt: FieldValue.serverTimestamp(),
       });
   }
+  await seedManufacturing(db, auth, password);
   writeFileSync(
     ".emulator-credentials.json",
     JSON.stringify({
@@ -234,6 +236,8 @@ async function seed() {
       ownerEmail: "proprietario@textilflow.test",
       companyInspectorEmail: "cadastro-empresa@textilflow.test",
       pendingInspectorEmail: "perfil-pendente@textilflow.test",
+      manufacturingInspectorEmail: demoEmails.inspector,
+      manufacturingOwnerEmail: demoEmails.owner,
       password,
     }),
   );

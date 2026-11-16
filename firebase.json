@@ -1,6 +1,5 @@
 {
   "hosting": {
-    "site": "textilflow-gui130699",
     "public": "out",
     "cleanUrls": true,
     "ignore": ["**/.*", "**/node_modules/**"],

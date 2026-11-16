@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { useForm, FieldValues } from "react-hook-form";
 import { sendPasswordResetEmail } from "firebase/auth";
@@ -10,7 +11,7 @@ import { call } from "@/services/api";
 import { auth } from "@/lib/firebase";
 import { errorMessage } from "@/lib/utils";
 export default function Settings() {
-  const { user } = useSession(),
+  const { user, company } = useSession(),
     [error, setError] = useState(""),
     [success, setSuccess] = useState("");
   const {
@@ -77,6 +78,14 @@ export default function Settings() {
           Alterar minha senha
         </Button>
       </section>
+      {company?.role === "inspector" && (
+        <section className="panel settings-card">
+          <h2>Administração da empresa</h2>
+          <Button asChild variant="outline">
+            <Link href="/usuarios">Usuários e acessos</Link>
+          </Button>
+        </section>
+      )}
     </>
   );
 }

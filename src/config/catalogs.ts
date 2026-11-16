@@ -104,7 +104,8 @@ export const catalogs: Record<
         options: ["rolo", "quilograma", "metro", "unidade", "pacote"],
         collection: "units",
       }),
-      f("supplierId", "Fornecedor", "select", { collection: "suppliers" }),
+      f("reference", "Código do material"),
+      f("supplierIds", "Fornecedores", "multi", { collection: "suppliers" }),
     ],
   },
   products: {
@@ -112,6 +113,14 @@ export const catalogs: Record<
     singular: "produto",
     description: "Peças confeccionadas e suas classificações.",
     fields: [
+      f("reference", "Código / referência"),
+      f("composition", "Composição do produto"),
+      f("colorIds", "Cores disponíveis", "multi", { collection: "colors" }),
+      f("materialIds", "Materiais utilizados", "multi", {
+        collection: "materials",
+      }),
+      f("modelId", "Modelagem", "select", { collection: "models" }),
+      f("gradeId", "Grade padrão", "select", { collection: "grades" }),
       f("category", "Categoria", "select", {
         options: [
           "Camiseta manga curta",
@@ -129,10 +138,11 @@ export const catalogs: Record<
     ],
   },
   models: {
-    label: "Modelos",
+    label: "Modelagens",
     singular: "modelo",
     description: "Modelos e especificações técnicas dos produtos.",
     fields: [
+      f("reference", "Código / referência"),
       f("productId", "Produto", "select", {
         collection: "products",
         required: true,
@@ -162,6 +172,31 @@ export const catalogs: Record<
       f("required", "Etapa obrigatória", "checkbox"),
     ],
   },
+  sectors: {
+    label: "Setores",
+    singular: "setor",
+    description: "Setores e suas etapas de produção.",
+    fields: [
+      f("operationalType", "Etapa operacional", "select", {
+        options: [
+          "recebimento",
+          "inspecao",
+          "modelagem",
+          "corte",
+          "estamparia",
+          "costura",
+          "embalagem",
+          "despacho",
+        ],
+      }),
+    ],
+  },
+  flows: {
+    label: "Fluxos",
+    singular: "fluxo",
+    description: "Sequências de setores para pedidos e OFs.",
+    fields: [],
+  },
   colors: {
     label: "Cores",
     singular: "cor",
@@ -177,8 +212,10 @@ export const catalogs: Record<
   grades: {
     label: "Grades",
     singular: "grade",
-    description: "Descreva as combinações de tamanhos nas observações.",
-    fields: [],
+    description: "Conjuntos reutilizáveis de tamanhos.",
+    fields: [
+      f("sizeIds", "Tamanhos da grade", "multi", { collection: "sizes" }),
+    ],
   },
   units: {
     label: "Unidades de medida",
