@@ -99,7 +99,7 @@ test.describe("Empresa modelo", () => {
     await page.getByRole("button", { name: "Salvar pedido" }).click();
     await expect(
       page.getByRole("heading", { name: "QA-" + id, exact: true }),
-    ).toBeVisible(opts);
+    ).toBeVisible();
     await page.getByRole("button", { name: "Gerar OF" }).click();
     const dialog = page.getByRole("dialog", { name: "Gerar OF" });
     await dialog.getByLabel("Número da OF").fill("OF-QA-" + id);
@@ -115,7 +115,7 @@ test.describe("Empresa modelo", () => {
     await dialog.getByRole("button", { name: "Confirmar OF" }).click();
     await expect(
       page.getByRole("heading", { name: /Grade da OF.*10/ }),
-    ).toBeVisible(opts);
+    ).toBeVisible();
     page.once("dialog", (d) => d.accept());
     await page.getByRole("button", { name: "Cancelar OF" }).click();
     await expect(page.getByRole("button", { name: "Cancelar OF" })).toHaveCount(
