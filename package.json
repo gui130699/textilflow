@@ -13,7 +13,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/test-e2e.mjs",
     "emulators": "node scripts/emulators.mjs",
     "seed": "tsx scripts/seed.ts",
     "verify": "npm run lint && npm run typecheck && npm test && npm run build"

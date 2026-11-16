@@ -238,9 +238,9 @@ test("layout responsivo e navegação móvel", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
   await page.getByRole("button", { name: "Abrir menu" }).click();
-  await page.getByRole("link", { name: "Projetos", exact: true }).click();
+  await page.getByRole("link", { name: "Pedidos", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Projetos", exact: true }),
+    page.getByRole("heading", { name: "Pedidos", exact: true }),
   ).toBeVisible();
   expect(
     await page.evaluate(

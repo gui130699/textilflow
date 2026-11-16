@@ -16,6 +16,7 @@ import { catalogSchema } from "../../../functions/src/domain";
 import { normalizeDocument, validCnpj } from "../../../functions/src/cnpj";
 import { errorMessage, formatDate } from "@/lib/utils";
 import { CatalogImage } from "@/components/catalog-image";
+import { SectorSequence } from "@/components/sector-sequence";
 const lookupFields = [
   "name",
   "legalName",
@@ -41,17 +42,19 @@ const emptyCatalog = {
 export function CatalogPage({
   kind,
   openNew = false,
+  initialRecord,
 }: {
   kind: string;
   openNew?: boolean;
+  initialRecord?: Row;
 }) {
   const session = useSession(),
     config = catalogs[kind],
     company = session.company;
   const [search, setSearch] = useState(""),
     [active, setActive] = useState("all"),
-    [editing, setEditing] = useState<Row | null>(() =>
-      openNew ? { id: crypto.randomUUID() } : null,
+    [editing, setEditing] = useState<Row | null>(
+      () => initialRecord ?? (openNew ? { id: crypto.randomUUID() } : null),
     ),
     [error, setError] = useState(""),
     [success, setSuccess] = useState(""),
@@ -67,6 +70,13 @@ export function CatalogPage({
     search,
     active,
   );
+  const sectors = useCollection(
+    company && kind === "flows" ? `companies/${company.id}/sectors` : null,
+  );
+  const materials = useCollection(
+    company && kind === "products" ? `companies/${company.id}/materials` : null,
+  );
+  const [sectorIds, setSectorIds] = useState<string[]>([]);
   const {
     register,
     handleSubmit,
@@ -74,7 +84,19 @@ export function CatalogPage({
     setValue,
     getValues,
     formState: { isSubmitting },
-  } = useForm<FieldValues>({ defaultValues: emptyCatalog });
+  } = useForm<FieldValues>({
+    defaultValues: {
+      ...emptyCatalog,
+      ...initialRecord,
+      ...(initialRecord
+        ? {
+            supplierIds:
+              initialRecord.supplierIds ??
+              (initialRecord.supplierId ? [initialRecord.supplierId] : []),
+          }
+        : {}),
+    },
+  });
   const taxIdInput = register("taxId");
   if (!config) return <Feedback error="Cadastro não encontrado." />;
   const companies = kind === "companies";
@@ -99,6 +121,7 @@ export function CatalogPage({
       : list.rows;
   function edit(row: Row) {
     setEditing(row);
+    setSectorIds((row.sectorIds as string[] | undefined) ?? []);
     setError("");
     setLookupSuccess("");
     autofill.current = null;
@@ -107,6 +130,12 @@ export function CatalogPage({
       name: "",
       active: true,
       ...row,
+      ...(kind === "materials"
+        ? {
+            supplierIds:
+              row.supplierIds ?? (row.supplierId ? [row.supplierId] : []),
+          }
+        : {}),
       services: Array.isArray(row.services) ? row.services.join(", ") : "",
     });
   }
@@ -178,6 +207,13 @@ export function CatalogPage({
         .filter(Boolean);
       if (kind === "companies")
         allowed.taxId = normalizeDocument(String(values.taxId ?? ""));
+      if (kind === "flows") {
+        if (!sectorIds.length)
+          throw Error("Adicione pelo menos um setor ao fluxo.");
+        allowed.sectorIds = sectorIds;
+      }
+      if (kind === "materials" && Array.isArray(allowed.supplierIds))
+        allowed.supplierId = allowed.supplierIds[0] ?? "";
       if (companies && sparkApi && !validCnpj(String(allowed.taxId ?? "")))
         throw Error("Confira o CNPJ informado antes de salvar a empresa.");
       const data = catalogSchema.parse(allowed);
@@ -376,9 +412,43 @@ export function CatalogPage({
                       field={field}
                       register={register}
                       companyId={company?.id}
-                      defaultValue={editing[field.key]}
+                      defaultValue={
+                        kind === "materials" && field.key === "supplierIds"
+                          ? (editing.supplierIds ??
+                            (editing.supplierId ? [editing.supplierId] : []))
+                          : editing[field.key]
+                      }
                     />
                   ))}
+                  {kind === "flows" && (
+                    <SectorSequence
+                      options={sectors.rows}
+                      value={sectorIds}
+                      onChange={setSectorIds}
+                    />
+                  )}
+                  {kind === "products" &&
+                    Array.isArray(editing.materialIds) &&
+                    editing.materialIds.length > 0 && (
+                      <div className="wide">
+                        <h3>Fichas dos materiais</h3>
+                        <ul>
+                          {editing.materialIds.map((id: string) => (
+                            <li key={id}>
+                              <Link
+                                className="text-link"
+                                href={`/cadastros/materials?registro=${encodeURIComponent(id)}`}
+                              >
+                                {String(
+                                  materials.rows.find((row) => row.id === id)
+                                    ?.name ?? id,
+                                )}
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   <FormField
                     field={{
                       key: "notes",

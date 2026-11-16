@@ -7,11 +7,9 @@ import {
   Layers3,
   LayoutDashboard,
   FolderKanban,
-  ClipboardCheck,
+  LibraryBig,
   Factory,
-  Truck,
   ChartNoAxesCombined,
-  Users,
   Settings,
   LogOut,
   ChevronDown,
@@ -21,16 +19,15 @@ import {
 } from "lucide-react";
 import { useSession } from "@/hooks/use-session";
 import { auth } from "@/lib/firebase";
-import { catalogs } from "@/config/catalogs";
+
 import { Loading, Feedback } from "@/components/feedback";
 import { Button } from "@/components/ui/button";
 const mainLinks = [
   { href: "/painel", label: "Visão geral", icon: LayoutDashboard },
-  { href: "/projetos", label: "Projetos", icon: FolderKanban },
-  { href: "/inspecoes", label: "Inspeções", icon: ClipboardCheck },
+  { href: "/pedidos", label: "Pedidos", icon: FolderKanban },
   { href: "/producao", label: "Produção", icon: Factory },
-  { href: "/expedicao", label: "Expedição", icon: Truck },
   { href: "/relatorios", label: "Relatórios", icon: ChartNoAxesCombined },
+  { href: "/cadastros", label: "Cadastros", icon: LibraryBig },
 ];
 export default function Workspace({ children }: { children: React.ReactNode }) {
   const s = useSession(),
@@ -44,7 +41,7 @@ export default function Workspace({ children }: { children: React.ReactNode }) {
       s.user &&
       !s.company &&
       !path.startsWith("/empresas") &&
-      path !== "/cadastros/companies"
+      !["/cadastros", "/cadastros/companies", "/configuracoes"].includes(path)
     )
       router.replace("/empresas");
   }, [s.loading, s.user, s.company, path, router]);
@@ -52,7 +49,7 @@ export default function Workspace({ children }: { children: React.ReactNode }) {
   if (
     !s.company &&
     !path.startsWith("/empresas") &&
-    path !== "/cadastros/companies"
+    !["/cadastros", "/cadastros/companies", "/configuracoes"].includes(path)
   )
     return <Loading />;
   return (
@@ -98,40 +95,16 @@ export default function Workspace({ children }: { children: React.ReactNode }) {
               {item.label}
             </Link>
           ))}
-          <details className="catalog-nav" open={path.startsWith("/cadastros")}>
-            <summary className="nav-caption">
-              CADASTROS <ChevronDown size={13} />
-            </summary>
-            {Object.entries(catalogs).map(([key, c]) => (
-              <Link
-                onClick={() => setOpen(false)}
-                className={`nav-item small ${path === `/cadastros/${key}` ? "selected" : ""}`}
-                key={key}
-                href={`/cadastros/${key}`}
-              >
-                {c.label}
-              </Link>
-            ))}
-          </details>
-          <div className="nav-caption">ADMINISTRAÇÃO</div>
-          {s.company?.role === "inspector" && (
-            <Link
-              className={`nav-item ${path === "/usuarios" ? "selected" : ""}`}
-              href="/usuarios"
-            >
-              <Users size={18} />
-              Usuários e acessos
-            </Link>
-          )}
-          <Link className="nav-item" href="/configuracoes">
+        </nav>
+        <div className="sidebar-footer">
+          <Link
+            className="nav-item"
+            href="/configuracoes"
+            onClick={() => setOpen(false)}
+          >
             <Settings size={18} />
             Configurações
           </Link>
-        </nav>
-        <div className="sidebar-footer">
-          <span className="live-dot" />
-          Acompanhamento conectado
-          <small>TêxtilFlow · Produção com clareza</small>
         </div>
       </aside>
       {open && (

@@ -125,7 +125,15 @@ export function FormField({
         <textarea id={field.key} rows={3} {...props} />
       ) : field.type === "select" || field.type === "multi" ? (
         <select id={field.key} multiple={field.type === "multi"} {...props}>
-          <option value="">Selecione</option>
+          {field.type !== "multi" && <option value="">Selecione</option>}
+          {Array.isArray(defaultValue) &&
+            defaultValue
+              .filter((id) => !options.some((o) => o.id === id))
+              .map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
           {typeof defaultValue === "string" &&
             defaultValue &&
             !options.some((o) => o.id === defaultValue) &&

@@ -28,6 +28,8 @@ import { DataTable } from "@/components/data-table";
 import { Feedback, Loading } from "@/components/feedback";
 import { OperationForm } from "@/features/production/operation-form";
 import { ProjectForm } from "./project-form";
+import { OfDetails } from "@/features/orders/of-details";
+import type { Manufacturing } from "@/features/orders/model";
 import { accountLabels, movementLabels } from "@/config/catalogs";
 import { call, filesEnabled, sparkApi } from "@/services/api";
 import { useLabels } from "@/hooks/use-labels";
@@ -237,6 +239,7 @@ export function ProjectDetail({
   }
   if (error && !project) return <Feedback error={error} />;
   if (!project || !company) return <Loading />;
+  const manufacturing = project.manufacturing as Manufacturing | undefined;
   const progress = Math.min(
     100,
     Math.round(((project.balances?.despachado ?? 0) / project.planned) * 100),
@@ -269,7 +272,7 @@ export function ProjectDetail({
     <>
       <Link href="/projetos" className="back-link">
         <ArrowLeft size={15} />
-        Todos os projetos
+        OFs e projetos anteriores
       </Link>
       <div className="page-heading">
         <div>
@@ -291,6 +294,22 @@ export function ProjectDetail({
         )}
       </div>
       <Feedback error={error || list.error} success={success} />
+      {manufacturing && (
+        <OfDetails
+          id={id}
+          of={manufacturing}
+          clientId={String(project.clientId)}
+          productId={String(project.productId)}
+          modelId={String(project.modelId ?? "")}
+          editable={
+            writable &&
+            project.status === "Planejado" &&
+            !project.sparkEventId &&
+            !project.sparkMovementId
+          }
+          cancelled={project.status === "Cancelado"}
+        />
+      )}
       <div className="metrics four">
         <div className="metric">
           <span>Quantidade prevista</span>
