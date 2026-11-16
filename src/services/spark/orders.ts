@@ -232,8 +232,14 @@ export async function editOfSectors(
   const project = projectRef(c, id);
   await runTransaction(db, async (tx) => {
     const previous = await tx.get(project);
-    if (JSON.stringify(previous.get("manufacturing.sectorIds")) === JSON.stringify(sectorIds)) return;
-    const sectors = await Promise.all(sectorIds.map((id) => tx.get(doc(db, "companies", c, "sectors", id))));
+    if (
+      JSON.stringify(previous.get("manufacturing.sectorIds")) ===
+      JSON.stringify(sectorIds)
+    )
+      return;
+    const sectors = await Promise.all(
+      sectorIds.map((id) => tx.get(doc(db, "companies", c, "sectors", id))),
+    );
     if (sectors.some((sector) => sector.get("active") !== true))
       throw Error("Selecione setores ativos.");
     tx.update(project, {

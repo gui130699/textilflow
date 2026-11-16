@@ -59,6 +59,7 @@ test.describe("Empresa modelo", () => {
       page.getByText("Peças a programar", { exact: true }).locator(".."),
     ).toContainText("60");
     await page.getByRole("link", { name: "OF-0087", exact: true }).click();
+    await expect(page.getByRole("heading", { name: /OF-0087/ })).toBeVisible();
     await page.reload();
     await expect(page.getByRole("heading", { name: /OF-0087/ })).toBeVisible();
     await expect(
@@ -68,6 +69,62 @@ test.describe("Empresa modelo", () => {
     await expect(
       page.getByText("Movimentações de produção", { exact: true }),
     ).toBeVisible();
+  });
+
+  test("programa e cancela uma OF parcial em duas cores", async ({ page }) => {
+    await login(page);
+    const id = Date.now().toString(36).toUpperCase();
+    await page.goto("/pedidos?id=novo");
+    await page.getByLabel("Número do pedido").fill("QA-" + id);
+    await page
+      .getByRole("combobox", { name: /^Cliente/ })
+      .selectOption("cliente");
+    await page
+      .getByRole("combobox", { name: /^Fluxo sugerido/ })
+      .selectOption("camiseta");
+    await page
+      .getByRole("combobox", { name: /^Produto/ })
+      .selectOption("cam-001");
+    await page.getByLabel("Preto", { exact: true }).check();
+    await page.getByLabel("Azul-marinho", { exact: true }).check();
+    await page
+      .getByRole("spinbutton", { name: "Peças Preto P", exact: true })
+      .fill("10");
+    await page
+      .getByRole("spinbutton", { name: "Peças Azul-marinho M", exact: true })
+      .fill("10");
+    await page
+      .getByRole("spinbutton", { name: "Folhas Preto", exact: true })
+      .fill("3");
+    await page.getByRole("button", { name: "Salvar pedido" }).click();
+    await expect(
+      page.getByRole("heading", { name: "QA-" + id, exact: true }),
+    ).toBeVisible(opts);
+    await page.getByRole("button", { name: "Gerar OF" }).click();
+    const dialog = page.getByRole("dialog", { name: "Gerar OF" });
+    await dialog.getByLabel("Número da OF").fill("OF-QA-" + id);
+    await dialog
+      .getByRole("spinbutton", { name: "Peças Preto P", exact: true })
+      .fill("6");
+    await dialog
+      .getByRole("spinbutton", { name: "Peças Azul-marinho M", exact: true })
+      .fill("4");
+    await dialog
+      .getByRole("spinbutton", { name: "Folhas Preto", exact: true })
+      .fill("2");
+    await dialog.getByRole("button", { name: "Confirmar OF" }).click();
+    await expect(
+      page.getByRole("heading", { name: /Grade da OF.*10/ }),
+    ).toBeVisible(opts);
+    page.once("dialog", (d) => d.accept());
+    await page.getByRole("button", { name: "Cancelar OF" }).click();
+    await expect(page.getByRole("button", { name: "Cancelar OF" })).toHaveCount(
+      0,
+    );
+    await page.getByRole("link", { name: "QA-" + id, exact: true }).click();
+    await expect(
+      page.getByText("Peças a programar", { exact: true }).locator(".."),
+    ).toContainText("20");
   });
 
   test("proprietário consulta pedido e OF sem controles de escrita", async ({
